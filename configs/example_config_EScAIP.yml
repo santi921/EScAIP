@@ -11,7 +11,6 @@ model:
     direct_force: true                      # direct force or gradient force [Note: gradient force is only supported with "math" attention kernel]
     hidden_size: 128                        # hidden size of the model, devisable by 2 and num_heads
     batch_size: 12                          # batch size for the model, keep it the same as optim.batch_size
-    use_fp16_backbone: false                # whether to use fp16 for the backbone or not
     use_compile: true                       # whether to use torch.compile or not (need to enable use_paddding)
     use_padding: true                       # whether to use padding or not
 

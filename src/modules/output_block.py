@@ -12,6 +12,42 @@ from ..configs import (
 )
 
 
+class OutputProjection(nn.Module):
+    def __init__(
+        self,
+        global_cfg: GlobalConfigs,
+        gnn_cfg: GraphNeuralNetworksConfigs,
+        reg_cfg: RegularizationConfigs,
+    ):
+        super().__init__()
+        # map concatenated readout features to hidden size
+        self.node_projection = get_linear(
+            in_features=global_cfg.hidden_size * (gnn_cfg.num_layers + 1),
+            out_features=global_cfg.hidden_size,
+            activation=global_cfg.activation,
+            bias=True,
+        )
+        self.edge_projection = get_linear(
+            in_features=global_cfg.hidden_size * (gnn_cfg.num_layers + 1),
+            out_features=global_cfg.hidden_size,
+            activation=global_cfg.activation,
+            bias=True,
+        )
+        self.readout_norm = get_normalization_layer(
+            reg_cfg.normalization, is_graph=True
+        )(global_cfg.hidden_size * (gnn_cfg.num_layers + 1))
+        self.output_norm = get_normalization_layer(
+            reg_cfg.normalization, is_graph=True
+        )(global_cfg.hidden_size)
+
+    def forward(self, node_readouts, edge_readouts):
+        node_readouts, edge_readouts = self.readout_norm(node_readouts, edge_readouts)
+        node_features = self.node_projection(node_readouts)
+        edge_features = self.edge_projection(edge_readouts)
+        node_features, edge_features = self.output_norm(node_features, edge_features)
+        return node_features, edge_features
+
+
 class OutputLayer(nn.Module):
     """
     Get the final prediction from the readouts (force or energy)
@@ -66,39 +102,3 @@ class OutputLayer(nn.Module):
 
         # final output layer
         return self.final_output(features)
-
-
-class OutputProjection(nn.Module):
-    def __init__(
-        self,
-        global_cfg: GlobalConfigs,
-        gnn_cfg: GraphNeuralNetworksConfigs,
-        reg_cfg: RegularizationConfigs,
-    ):
-        super().__init__()
-        # map concatenated readout features to hidden size
-        self.node_projection = get_linear(
-            in_features=global_cfg.hidden_size * (gnn_cfg.num_layers + 1),
-            out_features=global_cfg.hidden_size,
-            activation=global_cfg.activation,
-            bias=True,
-        )
-        self.edge_projection = get_linear(
-            in_features=global_cfg.hidden_size * (gnn_cfg.num_layers + 1),
-            out_features=global_cfg.hidden_size,
-            activation=global_cfg.activation,
-            bias=True,
-        )
-        self.readout_norm = get_normalization_layer(
-            reg_cfg.normalization, is_graph=True
-        )(global_cfg.hidden_size * (gnn_cfg.num_layers + 1))
-        self.output_norm = get_normalization_layer(
-            reg_cfg.normalization, is_graph=True
-        )(global_cfg.hidden_size)
-
-    def forward(self, node_readouts, edge_readouts):
-        node_readouts, edge_readouts = self.readout_norm(node_readouts, edge_readouts)
-        node_features = self.node_projection(node_readouts)
-        edge_features = self.edge_projection(edge_readouts)
-        node_features, edge_features = self.output_norm(node_features, edge_features)
-        return node_features, edge_features

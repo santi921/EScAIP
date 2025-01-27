@@ -138,7 +138,6 @@ class BaseGraphNeuralNetworkLayer(nn.Module):
 
     def aggregate(self, edge_features, neighbor_mask):
         neighbor_count = neighbor_mask.sum(dim=1, keepdim=True) + 1e-5
-        neighbor_count = neighbor_count.to(edge_features.dtype)
         return (edge_features * neighbor_mask.unsqueeze(-1)).sum(dim=1) / neighbor_count
 
     def forward(self):

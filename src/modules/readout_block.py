@@ -53,12 +53,6 @@ class ReadoutBlock(nn.Module):
             self.force_ffn = nn.Identity()
             self.force_norm = nn.Identity()
 
-        if global_cfg.use_fp16_backbone:
-            self.energy_ffn = self.energy_ffn.half()
-            self.energy_norm = self.energy_norm.half()
-            self.force_ffn = self.force_ffn.half()
-            self.force_norm = self.force_norm.half()
-
     def forward(self, node_features, edge_features):
         """
         Output: Node Readout (N, H); Edge Readout (N, max_nei, H)

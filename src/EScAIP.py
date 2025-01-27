@@ -115,9 +115,10 @@ class EScAIPBackbone(nn.Module, GraphModelMixin):
         # init weights
         self.apply(init_linear_weights)
 
-        # enable torch.set_float32_matmul_precision('high') if not using fp16 backbone
-        if not self.global_cfg.use_fp16_backbone:
-            torch.set_float32_matmul_precision("high")
+        # enable torch.set_float32_matmul_precision('high')
+        torch.set_float32_matmul_precision("high")
+
+        # log recompiles
         torch._logging.set_logs(recompiles=True)
 
         self.forward_fn = (
@@ -253,6 +254,7 @@ class EScAIPEnergyHead(EScAIPHeadBase):
             reg_cfg=self.reg_cfg,
             output_type="Scalar",
         )
+        self.energy_reduce = self.gnn_cfg.energy_reduce
 
         self.post_init(gain=0.01)
 
@@ -267,7 +269,7 @@ class EScAIPEnergyHead(EScAIPHeadBase):
             index=data.node_batch,
             dim_size=data.graph_padding_mask.shape[0],
             dim=0,
-            reduce="sum",
+            reduce=self.energy_reduce,
         )
         return energy_output
 

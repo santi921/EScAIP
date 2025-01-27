@@ -1,7 +1,59 @@
 includes:
-  - configs/s2ef/2M/base.yml
+  - configs/s2ef/MPTrj/base.yml
 
 trainer: equiformerv2_forces
+
+loss_functions:
+  - energy:
+      fn: per_atom_mae
+      coefficient: 5
+  - forces:
+      fn: l2mae
+      coefficient: 20
+  - stress_isotropic:
+      fn: mae
+      coefficient: 5
+  - stress_anisotropic:
+      fn: mae
+      reduction: mean
+      coefficient: 5
+
+evaluation_metrics:
+  primary_metric: energy_mae
+  metrics:
+    energy:
+      - mae
+      - per_atom_mae
+    forces:
+      - mae
+      - forcesx_mae
+      - forcesy_mae
+      - forcesz_mae
+      - cosine_similarity
+    stress:
+      - mae
+    stress_isotropic:
+      - mae
+    stress_anisotropic:
+      - mae
+
+outputs:
+  energy:
+    level: system
+    property: energy
+  forces:
+    level: atom
+    property: forces
+    train_on_free_atoms: True
+    eval_on_free_atoms: True
+  stress:
+    level: system
+    property: stress
+    decomposition:
+      stress_isotropic:
+        irrep_dim: 0
+      stress_anisotropic:
+        irrep_dim: 2
 
 model:
   name: hydra
@@ -17,15 +69,15 @@ model:
     hidden_size: 512
     regress_forces: true
     use_fp16_backbone: false
-    batch_size: 12 ## need to be the same as optim.batch_size!!
+    batch_size: 4 ## need to be the same as optim.batch_size!!
 
 
     # Molecular Graph Configs
     enforce_max_neighbors_strictly: true
     distance_function: gaussian
     max_neighbors: 20
-    max_num_elements: 90
-    max_num_nodes_per_batch: 150 # Average 73, Max 220, use 150 for padding
+    max_num_elements: 96
+    max_num_nodes_per_batch: 200 # Average 31.194, Max 444, use 100 for padding
     max_radius: 12.0
     otf_graph: true
     use_pbc: true
@@ -35,12 +87,12 @@ model:
     # Graph Neural Networks Configs
     atom_embedding_size: 128
     atten_name: memory_efficient
-    atten_num_heads: 8
+    atten_num_heads: 16
     edge_distance_embedding_size: 512
     edge_distance_expansion_size: 600
     node_direction_embedding_size: 64
     node_direction_expansion_size: 10
-    num_layers: 10
+    num_layers: 6
     output_hidden_layer_multiplier: 2
     readout_hidden_layer_multiplier: 2
     ffn_hidden_layer_multiplier: 2
@@ -58,14 +110,16 @@ model:
       module: src.EScAIP.EScAIPDirectForceHead
     energy:
       module: src.EScAIP.EScAIPEnergyHead
+    stress:
+      module: src.EScAIP.EScAIPRank2Head
 
 
 optim:
-  batch_size:                   12         # 6
-  eval_batch_size:              12         # 6
+  batch_size:                   4         # 6
+  eval_batch_size:              4         # 6
   load_balancing: atoms
-  num_workers: 9
-  lr_initial:                   0.0001    # EquivormerV2 uses 0.0004 for signal gpu batch size 8
+  num_workers: 0
+  lr_initial:                   0.00001    # EquivormerV2 uses 0.0004 for signal gpu batch size 8
 
   optimizer: AdamW
   optimizer_params:
@@ -77,7 +131,7 @@ optim:
     warmup_epochs: 0.1
     lr_min_factor: 0.5         # EquivormerV2 uses 0.01
 
-  max_epochs: 30
+  max_epochs: 500
   clip_grad_norm: 10
   ema_decay: 0.999
 

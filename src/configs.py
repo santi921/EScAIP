@@ -6,7 +6,6 @@ from typing import Any, Dict, Literal, Type
 class GlobalConfigs:
     regress_forces: bool
     direct_force: bool
-    use_fp16_backbone: bool
     hidden_size: int  # divisible by 2 and num_heads
     batch_size: int
     activation: Literal[
@@ -47,6 +46,7 @@ class GraphNeuralNetworksConfigs:
     output_hidden_layer_multiplier: int
     ffn_hidden_layer_multiplier: int
     use_angle_embedding: bool = True
+    energy_reduce: Literal["sum", "mean"] = "mean"
 
 
 @dataclass

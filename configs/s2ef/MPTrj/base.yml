@@ -1,51 +1,25 @@
-trainer: ocp
-
 dataset:
   train:
-    format: lmdb
-    src: /data/ericqu/MPtrj/lmdb/train/
-    key_mapping:
-      corrected_total_energy: energy
-      force: forces
+    format: ase_db
+    src:
+      - /data/mptrj/train/train_mptrj.aselmdb
+    a2g_args: { r_energy: True, r_forces: True, r_stress: True}
     transforms:
+      decompose_tensor:
+        tensor: stress
+        rank: 2
+        decomposition:
+          stress_isotropic:
+            irrep_dim: 0
+          stress_anisotropic:
+            irrep_dim: 2
       normalizer:
-        energy:
-          mean: -201.6314239501953
-          stdev: 203.66830444335938
-        forces:
-          mean: 0
-          stdev: 0.807562530040741
+        file: /data/mptrj/normalizers.pt
+      element_references:
+        file: /data/mptrj/element_references.pt
+
   val:
-    src: /data/ericqu/MPtrj/lmdb/val/
-
-logger: wandb
-
-outputs:
-  energy:
-    shape: 1
-    level: system
-  forces:
-    irrep_dim: 1
-    level: atom
-    train_on_free_atoms: True
-    eval_on_free_atoms: True
-
-loss_functions:
-  - energy:
-      fn: mae
-      coefficient: 1
-  - forces:
-      fn: l2mae
-      coefficient: 100
-
-evaluation_metrics:
-  metrics:
-    energy:
-      - mae
-    forces:
-      - mae
-      - cosine_similarity
-      - magnitude_error
-    misc:
-      - energy_forces_within_threshold
-  primary_metric: forces_mae
+    format: ase_db
+    src:
+      - /data/mptrj/val/val_mptrj.aselmdb
+    a2g_args: { r_energy: True, r_forces: True, r_stress: True}
