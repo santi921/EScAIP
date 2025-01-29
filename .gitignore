@@ -173,3 +173,10 @@ wandb/
 logs/
 checkpoints/
 results/
+
+# misc data
+*npz
+*npy
+*lmdb
+*lmdb-lock
+dev/*
