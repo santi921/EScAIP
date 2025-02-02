@@ -29,6 +29,21 @@ class MolecularGraphConfigs:
 
 
 @dataclass
+class GeneralMolecularGraphConfigs:
+    use_pbc: bool
+    use_pbc_single: bool
+    otf_graph: bool
+    max_neighbors: int
+    max_radius: float
+    max_num_elements: int
+    max_num_nodes_per_batch: int
+    enforce_max_neighbors_strictly: bool
+    allow_charges: list
+    allowed_spins: list
+    distance_function: Literal["gaussian", "sigmoid", "linearsigmoid", "silu"]
+
+
+@dataclass
 class GraphNeuralNetworksConfigs:
     num_layers: int
     atom_embedding_size: int
@@ -65,7 +80,37 @@ class EScAIPConfigs:
     reg_cfg: RegularizationConfigs
 
 
+@dataclass
+class GeneralEScAIPConfigs:
+    global_cfg: GlobalConfigs
+    molecular_graph_cfg: GeneralMolecularGraphConfigs
+    gnn_cfg: GraphNeuralNetworksConfigs
+    reg_cfg: RegularizationConfigs
+
+
 def init_configs(cls: Type[EScAIPConfigs], kwargs: Dict[str, Any]) -> EScAIPConfigs:
+    """
+    Initialize a dataclass with the given kwargs.
+    """
+    init_kwargs = {}
+    for field in fields(cls):
+        if is_dataclass(field.type):
+            init_kwargs[field.name] = init_configs(field.type, kwargs)
+        elif field.name in kwargs:
+            init_kwargs[field.name] = kwargs[field.name]
+        elif field.default is not None:
+            init_kwargs[field.name] = field.default
+        else:
+            raise ValueError(
+                f"Missing required configuration parameter: '{field.name}'"
+            )
+
+    return cls(**init_kwargs)
+
+
+def init_general_configs(
+    cls: Type[GeneralEScAIPConfigs], kwargs: Dict[str, Any]
+) -> GeneralEScAIPConfigs:
     """
     Initialize a dataclass with the given kwargs.
     """

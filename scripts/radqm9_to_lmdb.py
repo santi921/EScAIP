@@ -68,6 +68,8 @@ class AtomsToGraphs:
         energy=None,
         forces=None,
         cell=None,
+        charge=None,
+        spin=None,
         partial_charges=None,
         partial_spin=None,
         dipole=None,
@@ -84,6 +86,15 @@ class AtomsToGraphs:
             angles: (B, 3) lattice angles [ax, ay, az]
             forces: (B*N, 3)
             energy: (B)
+            cell: (B, 3, 3) lattice vectors
+            charge: (B)
+            spin: (B)
+            partial_charges: (B*N)
+            partial_spin: (B*N)
+            dipole: (B, 3)
+            resp_dipole: (B, 3)
+            mol_id: (B)
+
 
         Returns:
             data (torch_geometric.data.Data): A torch geometic data object with edge_index, positions, atomic_numbers,
@@ -141,11 +152,23 @@ class AtomsToGraphs:
             data.partial_spin = partial_spin
 
         if mol_id is not None:
-            mol_id = torch.from_numpy(mol_id).to(self.device).long()
             data.mol_id = mol_id
+        # print(charge, spin)
+        # print(type(charge), type(spin))
+        if charge is not None:
+            # convert np.int64 to torch tensor
+            charge = torch.tensor(charge, device=self.device).int()
+            data.charge = charge
+
+        if spin is not None:
+            # convert np.int64 to torch tensor
+            spin = torch.tensor(spin, device=self.device).int()
+            data.spin = spin
 
         fixed_idx = torch.zeros(natoms).float()
         data.fixed = fixed_idx
+
+        return data.cpu()
 
 
 def stream_xyz(file_xyz):
@@ -179,6 +202,7 @@ def convert_to_lmdb():
     resp_dipole_list = []
     resp_partial_charges_list = []
     mulliken_partial_charges_list = []
+    atomic_number_list = []
     mol_id_list = []
 
     for atoms in stream_xyz(ref_file):
@@ -192,9 +216,9 @@ def convert_to_lmdb():
         spin = info_dict["spin"]
         charge = info_dict["charge"]
         total_energy = info_dict["relative_energy"]
-        # ref_energy = info_dict['REF_energy']
+        # ref_energy = info_dict["REF_energy"]
         mol_id = info_dict["mol_id"]
-        # position_type = info_dict['position_type']
+        # position_type = info_dict["position_type"]
         dipole = info_dict["dipole_moments"]
         resp_dipole = info_dict["resp_dipole_moments"]
         # print(atoms.arrays["REF_forces"])
@@ -210,6 +234,7 @@ def convert_to_lmdb():
         energy_list.append(total_energy)
         force_list.append(forces)
         spin_list.append(spin)
+        atomic_number_list.append(atomic_numbers)
         charge_list.append(charge)
         positions_list.append(positions)
         dipole_list.append(dipole)
@@ -283,26 +308,29 @@ def convert_to_lmdb():
         )
 
         for i, idx in enumerate(tqdm(ranges[spidx])):
-            natoms = np.array([positions.shape[1]] * 1, dtype=np.int64)
+            natoms = np.array([positions_list[idx].shape[0]] * 1, dtype=np.int64)
             # print("converting")
+            # print(natoms, positions_list[idx].shape, atomic_number_list[idx].shape, force_list[idx].shape)
+
             data = a2g.convert(
                 natoms,
                 positions_list[idx],
-                atomic_numbers,
+                atomic_number_list[idx],
                 lengths,
                 angles,
                 energy_list[idx],
                 force_list[idx],
-                partial_charges=resp_partial_charges_list[idx],
+                charge=charge_list[idx],
+                spin=spin_list[idx],
+                mol_id=mol_id_list[idx],
+                # partial_charges=resp_partial_charges_list[idx],
                 # partial_spin=mulliken_partial_charges_list[idx],
-                partial_spin=None,
                 dipole=dipole_list[idx],
                 resp_dipole=resp_dipole_list[idx],
-                mol_id=mol_id_list[idx],
             )
-            print("converted")
-            # data.sid = 0
-            # data.fid = idx
+            # print("converted")
+            data.sid = 0
+            data.fid = idx
 
             txn = db.begin(write=True)
             txn.put(f"{i}".encode("ascii"), pkl.dumps(data, protocol=-1))
