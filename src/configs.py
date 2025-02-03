@@ -38,7 +38,7 @@ class GeneralMolecularGraphConfigs:
     max_num_elements: int
     max_num_nodes_per_batch: int
     enforce_max_neighbors_strictly: bool
-    allow_charges: list
+    allowed_charges: list
     allowed_spins: list
     distance_function: Literal["gaussian", "sigmoid", "linearsigmoid", "silu"]
 
