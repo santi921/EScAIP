@@ -187,8 +187,8 @@ def stream_xyz(file_xyz):
 
 def convert_to_lmdb():
     dataset_name = "radqm9_test"
-    ref_file = "/home/santiagovargas/dev/aimnet2/data/xyz/radqm9_65_10_25_trajectory_full_data_20240916_val_0_1.xyz"
-    db_path = "/home/santiagovargas/dev/EScAIP/dev/scripts/data/lmdb_test/"
+    ref_file = "/home/santiagovargas/dev/aimnet2/data/xyz/radqm9_65_10_25_sp_vacuum_full_data_20240807_val.xyz"
+    db_path = "/home/santiagovargas/dev/EScAIP/dev/scripts/data/radqm9_val_full/"
     save_path = Path(db_path) / dataset_name
     save_path.mkdir(parents=True, exist_ok=True)
 
@@ -219,8 +219,8 @@ def convert_to_lmdb():
         # ref_energy = info_dict["REF_energy"]
         mol_id = info_dict["mol_id"]
         # position_type = info_dict["position_type"]
-        dipole = info_dict["dipole_moments"]
-        resp_dipole = info_dict["resp_dipole_moments"]
+        dipole = info_dict["dipole_moment"]
+        resp_dipole = info_dict["resp_dipole_moment"]
         # print(atoms.arrays["REF_forces"])
         forces = np.array(atoms.arrays["REF_forces"])
 
@@ -243,8 +243,8 @@ def convert_to_lmdb():
         mulliken_partial_charges_list.append(mulliken_partial_charges)
         mol_id_list.append(mol_id)
 
-        if dataset_size == 100:
-            break
+        # if dataset_size == 100:
+        #    break
 
     energy_list = np.array(energy_list).reshape(
         -1, 1

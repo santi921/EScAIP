@@ -14,4 +14,3 @@ def preprocess_data():
     new_data = load_preprocess_example()
     shape_out = new_data.node_direction_expansion.shape
     assert shape_out == (450, 16), f"Expected shape (450, 16), got {shape_out}"
-    # print(new_data.node_direction_expansion.shape)

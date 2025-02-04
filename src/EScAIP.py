@@ -10,16 +10,23 @@ from fairchem.core.common.registry import registry
 from fairchem.core.common.utils import conditional_grad
 from fairchem.core.models.base import GraphModelMixin, HeadInterface
 
-from .configs import EScAIPConfigs, init_configs
-from .custom_types import GraphAttentionData
+from .configs import (
+    GeneralEScAIPConfigs,
+    EScAIPConfigs,
+    init_configs,
+    init_general_configs,
+)
+from .custom_types import GraphAttentionData, GeneralGraphAttentionData
 from .modules import (
     EfficientGraphAttentionBlock,
     InputBlock,
+    GeneralInputBlock,
     ReadoutBlock,
     OutputProjection,
     OutputLayer,
+    GeneralEfficientGraphAttentionBlock,
 )
-from .utils.data_preprocess import data_preprocess
+from .utils.data_preprocess import data_preprocess, data_preprocess_spin_charge
 from .utils.nn_utils import no_weight_decay, init_linear_weights
 from .utils.graph_utils import unpad_results, compilable_scatter
 
@@ -35,8 +42,6 @@ class EScAIPBackbone(nn.Module, GraphModelMixin):
         **kwargs,
     ):
         super().__init__()
-
-        # load configs
         cfg = init_configs(EScAIPConfigs, kwargs)
         self.global_cfg = cfg.global_cfg
         self.molecular_graph_cfg = cfg.molecular_graph_cfg
@@ -128,6 +133,154 @@ class EScAIPBackbone(nn.Module, GraphModelMixin):
         )
 
     def compiled_forward(self, data: GraphAttentionData):
+        # input block
+        node_features, edge_features = self.input_block(data)
+
+        # input readout
+        readouts = self.readout_layers[0](node_features, edge_features)
+        node_readouts = [readouts[0]]
+        edge_readouts = [readouts[1]]
+
+        # transformer blocks
+        for idx in range(self.gnn_cfg.num_layers):
+            node_features, edge_features = self.transformer_blocks[idx](
+                data, node_features, edge_features
+            )
+            readouts = self.readout_layers[idx + 1](node_features, edge_features)
+            node_readouts.append(readouts[0])
+            edge_readouts.append(readouts[1])
+
+        node_features, edge_features = self.output_projection(
+            node_readouts=torch.cat(node_readouts, dim=-1),
+            edge_readouts=torch.cat(edge_readouts, dim=-1),
+        )
+
+        return {
+            "data": data,
+            "node_features": node_features,
+            "edge_features": edge_features,
+        }
+
+    @conditional_grad(torch.enable_grad())
+    def forward(self, data: torch_geometric.data.Batch):
+        # gradient force
+        if self.regress_forces and not self.global_cfg.direct_force:
+            data.pos.requires_grad_(True)
+
+        # preprocess data
+        x = self.data_preprocess(data)
+
+        return self.forward_fn(x)
+
+    @torch.jit.ignore
+    def no_weight_decay(self):
+        return no_weight_decay(self)
+
+
+@registry.register_model("GeneralEScAIPBackbone")
+class GeneralEScAIPBackbone(nn.Module, GraphModelMixin):
+    """
+    Efficiently Scaled Attention Interactomic Potential (EScAIP) backbone model.
+    """
+
+    def __init__(
+        self,
+        **kwargs,
+    ):
+        super().__init__()
+
+        # load configs
+        cfg = init_general_configs(GeneralEScAIPConfigs, kwargs)
+        self.global_cfg = cfg.global_cfg
+        self.molecular_graph_cfg = cfg.molecular_graph_cfg
+        self.gnn_cfg = cfg.gnn_cfg
+        self.reg_cfg = cfg.reg_cfg
+
+        # for trainer
+        self.regress_forces = cfg.global_cfg.regress_forces
+        self.use_pbc = cfg.molecular_graph_cfg.use_pbc
+
+        # graph generation
+        self.use_pbc_single = (
+            self.molecular_graph_cfg.use_pbc_single
+        )  # TODO: remove this when FairChem fixes the bug
+        generate_graph_fn = partial(
+            self.generate_graph,
+            cutoff=self.molecular_graph_cfg.max_radius,
+            max_neighbors=self.molecular_graph_cfg.max_neighbors,
+            use_pbc=self.molecular_graph_cfg.use_pbc,
+            otf_graph=self.molecular_graph_cfg.otf_graph,
+            enforce_max_neighbors_strictly=self.molecular_graph_cfg.enforce_max_neighbors_strictly,
+            use_pbc_single=self.molecular_graph_cfg.use_pbc_single,
+        )
+
+        # data preprocess
+        self.data_preprocess = partial(
+            data_preprocess_spin_charge,
+            generate_graph_fn=generate_graph_fn,
+            global_cfg=self.global_cfg,
+            gnn_cfg=self.gnn_cfg,
+            molecular_graph_cfg=self.molecular_graph_cfg,
+        )
+
+        ## Model Components
+
+        # Input Block
+        self.input_block = GeneralInputBlock(
+            global_cfg=self.global_cfg,
+            molecular_graph_cfg=self.molecular_graph_cfg,
+            gnn_cfg=self.gnn_cfg,
+            reg_cfg=self.reg_cfg,
+        )
+
+        # Transformer Blocks
+        self.transformer_blocks = nn.ModuleList(
+            [
+                GeneralEfficientGraphAttentionBlock(
+                    global_cfg=self.global_cfg,
+                    molecular_graph_cfg=self.molecular_graph_cfg,
+                    gnn_cfg=self.gnn_cfg,
+                    reg_cfg=self.reg_cfg,
+                )
+                for _ in range(self.gnn_cfg.num_layers)
+            ]
+        )
+
+        # Readout Layer
+        self.readout_layers = nn.ModuleList(
+            [
+                ReadoutBlock(
+                    global_cfg=self.global_cfg,
+                    gnn_cfg=self.gnn_cfg,
+                    reg_cfg=self.reg_cfg,
+                )
+                for _ in range(self.gnn_cfg.num_layers + 1)
+            ]
+        )
+
+        # Output Projection
+        self.output_projection = OutputProjection(
+            global_cfg=self.global_cfg,
+            gnn_cfg=self.gnn_cfg,
+            reg_cfg=self.reg_cfg,
+        )
+
+        # init weights
+        self.apply(init_linear_weights)
+
+        # enable torch.set_float32_matmul_precision('high')
+        torch.set_float32_matmul_precision("high")
+
+        # log recompiles
+        torch._logging.set_logs(recompiles=True)
+
+        self.forward_fn = (
+            torch.compile(self.compiled_forward)
+            if self.global_cfg.use_compile
+            else self.compiled_forward
+        )
+
+    def compiled_forward(self, data: GeneralGraphAttentionData):
         # input block
         node_features, edge_features = self.input_block(data)
 

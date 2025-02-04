@@ -40,6 +40,8 @@ class GeneralMolecularGraphConfigs:
     enforce_max_neighbors_strictly: bool
     allowed_charges: list
     allowed_spins: list
+    use_partial_charge: bool
+    use_partial_spin: bool
     distance_function: Literal["gaussian", "sigmoid", "linearsigmoid", "silu"]
 
 
@@ -117,7 +119,7 @@ def init_general_configs(
     init_kwargs = {}
     for field in fields(cls):
         if is_dataclass(field.type):
-            init_kwargs[field.name] = init_configs(field.type, kwargs)
+            init_kwargs[field.name] = init_general_configs(field.type, kwargs)
         elif field.name in kwargs:
             init_kwargs[field.name] = kwargs[field.name]
         elif field.default is not None:

@@ -39,7 +39,7 @@ class GeneralGraphAttentionData:
     atomic_numbers: (N)
     edge_distance_expansion: (N, max_nei, edge_distance_expansion_size)
     edge_direction: (N, max_nei, 3)
-    node_direction_expansion: (N, node_direction_expansion_size)
+    node_direction_expansion: (N, node_direction_expansion_size + len(allowed_charges) + len(allowed_spins))
     attn_mask: (N * num_head, max_nei, max_nei) Attention mask with angle embeddings
     angle_embedding: (N * num_head, max_nei, max_nei) Angle embeddings (cosine)
     neighbor_list: (N, max_nei)

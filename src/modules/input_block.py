@@ -8,7 +8,7 @@ from ..configs import (
     GeneralMolecularGraphConfigs,
 )
 from ..custom_types import GraphAttentionData, GeneralGraphAttentionData
-from .base_block import BaseGraphNeuralNetworkLayer
+from .base_block import BaseGraphNeuralNetworkLayer, GeneralBaseGraphNeuralNetworkLayer
 from ..utils.nn_utils import get_feedforward, get_normalization_layer
 
 
@@ -51,7 +51,9 @@ class GeneralInputBlock(nn.Module):
     ):
         super().__init__()
 
-        self.input_layer = InputLayer(global_cfg, molecular_graph_cfg, gnn_cfg, reg_cfg)
+        self.input_layer = GeneralInputLayer(
+            global_cfg, molecular_graph_cfg, gnn_cfg, reg_cfg
+        )
 
         self.norm = get_normalization_layer(reg_cfg.normalization)(
             global_cfg.hidden_size
@@ -62,11 +64,11 @@ class GeneralInputBlock(nn.Module):
         return self.norm(node_features, edge_features)
 
 
-class GeneralInputLayer(BaseGraphNeuralNetworkLayer):
+class GeneralInputLayer(GeneralBaseGraphNeuralNetworkLayer):
     def __init__(
         self,
         global_cfg: GlobalConfigs,
-        molecular_graph_cfg: MolecularGraphConfigs,
+        molecular_graph_cfg: GeneralMolecularGraphConfigs,
         gnn_cfg: GraphNeuralNetworksConfigs,
         reg_cfg: RegularizationConfigs,
     ):
@@ -89,7 +91,7 @@ class GeneralInputLayer(BaseGraphNeuralNetworkLayer):
             global_cfg.hidden_size
         )
 
-    def forward(self, inputs: GraphAttentionData):
+    def forward(self, inputs: GeneralGraphAttentionData):
         # Get edge features
         edge_features = self.get_edge_features(inputs)
 
