@@ -27,6 +27,20 @@ def load_data_model(
     return batch.to(device), model.to(device)
 
 
+def load_data_model_general(
+    model_path: str = "tests/data/L2_H4_64_general.yml",
+):
+    batch = load_lmdb()
+    with open(model_path) as f:
+        config = yaml.load(f, Loader=yaml.SafeLoader)
+
+    model = HydraModel(**config["model"])
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    return batch.to(device), model.to(device)
+
+
 def load_one_hot():
     n_nodes = torch.tensor([15, 17, 17])
     global_data = torch.tensor([-1, 0, 2])

@@ -1,8 +1,23 @@
-from tests.test_utils import load_data_model
+from tests.test_utils import load_data_model, load_data_model_general
 
 
 def test_input_block():
     batch, model = load_data_model()
+
+    max_nei = model.backbone.molecular_graph_cfg.max_neighbors
+    hidden_size = model.backbone.global_cfg.hidden_size
+
+    x = model.backbone.data_preprocess(batch)
+
+    output = model.backbone.input_block(x)
+    N = x.node_padding_mask.shape[0]
+
+    assert output[0].shape == (N, hidden_size)
+    assert output[1].shape == (N, max_nei, hidden_size)
+
+
+def test_input_block_general():
+    batch, model = load_data_model_general()
 
     max_nei = model.backbone.molecular_graph_cfg.max_neighbors
     hidden_size = model.backbone.global_cfg.hidden_size
