@@ -438,6 +438,57 @@ class EScAIPEnergyHead(EScAIPHeadBase):
         )
 
 
+@registry.register_model("LREScAIPEnergyHead")
+class LREScAIPEnergyHead(EScAIPHeadBase):
+    # ONLY CHARGE, takes one dimension
+    def __init__(self, backbone: EScAIPBackbone):
+        super().__init__(backbone)
+        self.energy_layer_sr = OutputLayer(
+            global_cfg=self.global_cfg,
+            gnn_cfg=self.gnn_cfg,
+            reg_cfg=self.reg_cfg,
+            output_type="Scalar",
+        )
+
+        self.energy_layer_lr = OutputLayer(
+            global_cfg=self.global_cfg,
+            gnn_cfg=self.gnn_cfg,
+            reg_cfg=self.reg_cfg,
+            output_type="Scalar",
+        )
+
+        self.energy_reduce = self.gnn_cfg.energy_reduce
+        self.post_init(gain=0.01)
+
+    def compiled_forward(self, node_features, data: GraphAttentionData):
+        energy_output_sr = self.energy_layer_sr(node_features)
+        # energy_output_lr = self.energy_output_lr(node_features)
+
+        # the following not compatible with torch.compile (grpah break)
+        # energy_output = torch_scatter.scatter(energy_output, node_batch, dim=0, reduce="sum")
+
+        energy_output_sr = compilable_scatter(
+            src=energy_output_sr,
+            index=data.node_batch,
+            dim_size=data.graph_padding_mask.shape[0],
+            dim=0,
+            reduce=self.energy_reduce,
+        )
+        return energy_output_sr
+
+    def forward(self, data, emb: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
+        energy_output_sr = self.forward_fn(
+            node_features=emb["node_features"],
+            data=emb["data"],
+        )
+
+        return unpad_results(
+            results={"energy": energy_output_sr},
+            node_padding_mask=emb["data"].node_padding_mask,
+            graph_padding_mask=emb["data"].graph_padding_mask,
+        )
+
+
 @registry.register_model("EScAIP_grad_energy_force_head")
 class EScAIPGradientEnergyForceHead(EScAIPEnergyHead):
     """

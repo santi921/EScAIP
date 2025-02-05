@@ -193,6 +193,10 @@ def data_preprocess_spin_charge(
     # generate graph
     graph = generate_graph_fn(data)
 
+    # if molecular_graph_cfg.max_radius == molecular_graph_cfg.max_radius_lr:
+    #    #TODO
+    #    pass
+
     # sort edge index according to receiver node
     edge_index, edge_attr = torch_geometric.utils.sort_edge_index(
         graph.edge_index,
@@ -332,5 +336,6 @@ def data_preprocess_spin_charge(
         charge=data.charge,
         partial_charge=None,  # TODO: use this if we ever get here
         partial_spin=None,  # TODO: use this if we ever get here
+        # graph=graph,
     )
     return x

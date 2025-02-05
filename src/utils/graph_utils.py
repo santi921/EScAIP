@@ -1,5 +1,7 @@
+import numpy as np
 import torch
 import torch.nn.functional as F
+from torch_geometric.nn import radius_graph
 from torch_scatter import scatter
 from e3nn.o3._spherical_harmonics import _spherical_harmonics
 
@@ -300,3 +302,90 @@ def one_hot_encode(
         ind += 1
     data = torch.cat(list_data)
     return data
+
+
+@torch.jit.script
+def get_potential(
+    q: torch.Tensor,
+    convergence_func: torch.Tensor,
+    edge_dist_transformed: torch.Tensor,
+    ind_charges: torch.Tensor,
+    ind_interactions: torch.Tensor,
+):
+    """
+    Get the potential energy for each atom. Compilable function.
+    Takes:
+    q: charge vector of shape (n_atoms, 1)
+    convergence_func: convergence function of shape (n_atoms, n_neighbors)
+    edge_dist_transformed: transformed distance matrix of shape (n_atoms, n_neighbors)
+    ind_charges: list of charges for each atom of shape (n_atoms, 1)
+    ind_interactions: list of interactions for each atom of shape (n_atoms, n_neighbors)
+    """
+    q_now = q[ind_charges]
+    convergence_func_now = convergence_func[ind_interactions]
+    edge_dist_transformed_now = edge_dist_transformed[ind_interactions]
+    pairwise = q_now * q_now * edge_dist_transformed_now * convergence_func_now
+    return pairwise.sum().view(-1)
+
+
+def potential_full(
+    batch,
+    q: torch.Tensor,
+    radius_lr: float = 5.5,
+    sigma: float = 1.0,
+    epsilon: float = 1e-6,
+    twopi: float = 2.0 * np.pi,
+    max_num_neighbors: int = 40,
+):
+    """
+    Get the potential energy for each atom in the batch.
+    Takes:
+        batch: torch_geometric.data.Data object
+        q: charge vector of shape (n_atoms, 1)
+        radius_lr: cutoff radius for long-range interactions
+        sigma: sigma parameter for the error function
+        epsilon: epsilon parameter for the error function
+        twopi: 2 * pi
+        max_num_neighbors: maximum number of neighbors for each atom
+    Returns:
+        potential_dict: dictionary of potential energy for each atom
+    """
+
+    edge_index = radius_graph(
+        batch.pos,
+        r=radius_lr,
+        batch=batch.batch,
+        max_num_neighbors=max_num_neighbors,
+        flow="source_to_target",
+    )
+
+    # yields list of interactions [source, target]
+    j, i = edge_index
+    distance_vec = batch.pos[j] - batch.pos[i]
+    # red to [n_interactions, 1]
+    edge_dist = distance_vec.norm(dim=-1)
+
+    list_target = edge_index[1]
+    list_source = edge_index[0]
+
+    # get list of neighbors for each node
+    dict_mask_lr = {}
+    dict_ind_neighbors_interactions = {}
+    for i in list_source.unique():
+        dict_mask_lr[i] = list_target[list_source == i]
+        # get list of interactions that include i as a source
+        dict_ind_neighbors_interactions[i] = torch.where(list_source == i)[0]
+
+    # transform distance matrix
+    edge_dist_transformed = (1.0 / (edge_dist + epsilon)) / twopi / 2.0
+    convergence_func = torch.special.erf(edge_dist / sigma / (2.0**0.5))
+
+    potential_dict = {}
+    # get potential energy for each atom
+    for ind, mask in dict_mask_lr.items():
+        interactions_now = dict_ind_neighbors_interactions[ind]
+        # get_potential(q, convergence_func, edge_dist_transformed, mask, interactions_now)
+        potential_dict[ind] = get_potential(
+            q, convergence_func, edge_dist_transformed, mask, interactions_now
+        )
+    return potential_dict
