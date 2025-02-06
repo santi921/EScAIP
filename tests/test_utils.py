@@ -112,6 +112,7 @@ def load_preprocess_example():
         otf_graph=molecular_graph_cfg.otf_graph,
         max_neighbors=molecular_graph_cfg.max_neighbors,
         max_radius=molecular_graph_cfg.max_radius,
+        max_radius_lr=molecular_graph_cfg.max_radius_lr,
         max_num_elements=molecular_graph_cfg.max_num_elements,
         max_num_nodes_per_batch=molecular_graph_cfg.max_num_nodes_per_batch,
         enforce_max_neighbors_strictly=molecular_graph_cfg.enforce_max_neighbors_strictly,

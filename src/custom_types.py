@@ -47,6 +47,11 @@ class GeneralGraphAttentionData:
     node_batch: (N)
     node_padding_mask: (N)
     graph_padding_mask: (num_graphs)
+    spin: (num_graphs)
+    charge: (num_graphs)
+    partial_charge: (N)
+    partial_spin: (N)
+    pos: (N, 3)
     """
 
     atomic_numbers: torch.Tensor
@@ -64,6 +69,7 @@ class GeneralGraphAttentionData:
     charge: torch.Tensor
     partial_charge: torch.Tensor
     partial_spin: torch.Tensor
+    pos: torch.Tensor = None
 
 
 def flatten_graph_attention_data_with_spec(data, spec):

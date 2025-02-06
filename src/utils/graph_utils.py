@@ -188,6 +188,7 @@ def pad_batch(
     node_padding_mask[num_nodes:] = False
 
     # TODO look into a better way to handle this
+    # is this 2x just random?
     graph_padding_mask = torch.ones(batch_size * 2, dtype=torch.bool, device=device)
     graph_padding_mask[num_graphs:] = False
 
@@ -201,6 +202,76 @@ def pad_batch(
         node_batch,
         node_padding_mask,
         graph_padding_mask,
+    )
+
+
+def pad_batch_pos(
+    max_num_nodes_per_batch,
+    atomic_numbers,
+    node_direction_expansion,
+    edge_distance_expansion,
+    edge_direction,
+    neighbor_list,
+    neighbor_mask,
+    node_batch,
+    num_graphs,
+    batch_size,
+    pos=None,
+):
+    """
+    Pad the batch to have the same number of nodes in total.
+    Needed for torch.compile
+
+    Note: the sampler for multi-node training could sample batchs with different number of graphs.
+    The number of sampled graphs could be smaller or larger than the batch size.
+    This would cause the model to recompile or core dump.
+    Temporarily, setting the max number of graphs to be twice the batch size to mitigate this issue.
+    TODO: look into a better way to handle this.
+    """
+    device = atomic_numbers.device
+    num_nodes, _ = neighbor_list.shape
+    pad_size = max_num_nodes_per_batch * batch_size - num_nodes
+    assert (
+        pad_size >= 0
+    ), "Number of nodes exceeds the maximum number of nodes per batch"
+
+    # pad the features
+    atomic_numbers = F.pad(atomic_numbers, (0, pad_size), value=0)
+    node_direction_expansion = F.pad(
+        node_direction_expansion, (0, 0, 0, pad_size), value=0
+    )
+    edge_distance_expansion = F.pad(
+        edge_distance_expansion, (0, 0, 0, 0, 0, pad_size), value=0
+    )
+    edge_direction = F.pad(edge_direction, (0, 0, 0, 0, 0, pad_size), value=0)
+    neighbor_list = F.pad(neighbor_list, (0, 0, 0, pad_size), value=-1)
+    neighbor_mask = F.pad(neighbor_mask, (0, 0, 0, pad_size), value=0)
+    node_batch = F.pad(node_batch, (0, pad_size), value=num_graphs)
+    if pos is not None:
+        pos = F.pad(pos, (0, 0, 0, pad_size), value=0)
+
+    # create the padding mask
+    node_padding_mask = torch.ones(
+        max_num_nodes_per_batch * batch_size, dtype=torch.bool, device=device
+    )
+    node_padding_mask[num_nodes:] = False
+
+    # TODO look into a better way to handle this
+    # is this 2x just random?
+    graph_padding_mask = torch.ones(batch_size * 2, dtype=torch.bool, device=device)
+    graph_padding_mask[num_graphs:] = False
+
+    return (
+        atomic_numbers,
+        node_direction_expansion,
+        edge_distance_expansion,
+        edge_direction,
+        neighbor_list,
+        neighbor_mask,
+        node_batch,
+        node_padding_mask,
+        graph_padding_mask,
+        pos,
     )
 
 
@@ -253,6 +324,7 @@ def compilable_scatter(
     torch_scatter scatter function with compile support.
     Modified from torch_geometric.utils.scatter_.
     """
+    reduce = reduce.lower()
 
     def broadcast(src: torch.Tensor, ref: torch.Tensor, dim: int) -> torch.Tensor:
         dim = ref.dim() + dim if dim < 0 else dim
@@ -275,6 +347,10 @@ def compilable_scatter(
         out = src.new_zeros(size).scatter_add_(dim, index, src)
 
         return out / broadcast(count, out, dim)
+
+    if reduce == "None":
+        index = broadcast(index, src, dim)
+        return src.new_zeros(size).scatter_(dim, index, src)
 
     raise ValueError((f"Invalid reduce option '{reduce}'."))
 
@@ -380,12 +456,17 @@ def potential_full(
     edge_dist_transformed = (1.0 / (edge_dist + epsilon)) / twopi / 2.0
     convergence_func = torch.special.erf(edge_dist / sigma / (2.0**0.5))
 
+    # create vector of potentials from ind 0 to n_atoms
+    results = torch.zeros(list_source.max() + 1, device=q.device)
     potential_dict = {}
+
     # get potential energy for each atom
     for ind, mask in dict_mask_lr.items():
         interactions_now = dict_ind_neighbors_interactions[ind]
         # get_potential(q, convergence_func, edge_dist_transformed, mask, interactions_now)
-        potential_dict[ind] = get_potential(
+        pot = get_potential(
             q, convergence_func, edge_dist_transformed, mask, interactions_now
         )
-    return potential_dict
+        potential_dict[ind] = pot
+        results[ind] = pot
+    return results

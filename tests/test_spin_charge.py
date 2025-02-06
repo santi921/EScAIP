@@ -1,5 +1,6 @@
 import numpy as np
 import torch
+
 from tests.test_utils import (
     load_one_hot,
     load_preprocess_example,
@@ -51,7 +52,7 @@ class TestSpinCharge:
         n_nodes = self.batch.num_nodes
         q = torch.zeros(n_nodes, device=self.batch.pos.device)
         q[0] = 1.0
-        dict_potential = potential_full(
+        potential = potential_full(
             batch=self.batch,
             q=q,
             sigma=sigma,
@@ -60,10 +61,9 @@ class TestSpinCharge:
             radius_lr=radius_lr,
             max_num_neighbors=max_num_neighbors,
         )
-        list_results = list(dict_potential.values())
-
-        assert list_results[0] == 0.0, f"Expected 0.0, got {list_results[0]}"
+        potential = list(potential.cpu().numpy())
+        assert potential[0] == 0.0, f"Expected 0.0, got {potential[0]}"
         assert np.isclose(
-            float(list_results[1].cpu().numpy()[0]), 0.0477, atol=1e-3
-        ), f"Expected 0.0477, got {list_results[1]}"
-        assert list_results[-1] == 0.0, f"Expected 0.0, got {list_results[-1]}"
+            float(potential[1]), 0.0477, atol=1e-3
+        ), f"Expected 0.0477, got {potential[1]}"
+        assert potential[-1] == 0.0, f"Expected 0.0, got {potential[-1]}"

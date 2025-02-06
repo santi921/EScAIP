@@ -24,6 +24,7 @@ from .graph_utils import (
     get_attn_mask,
     patch_singleton_atom,
     pad_batch,
+    pad_batch_pos,
     one_hot_encode,
 )
 
@@ -175,6 +176,9 @@ def data_preprocess_spin_charge(
     # atomic numbers
     atomic_numbers = data.atomic_numbers.long()
 
+    # positions
+    pos = data.pos
+
     # edge distance expansion
     expansion_func = {
         "gaussian": GaussianSmearing,
@@ -194,7 +198,7 @@ def data_preprocess_spin_charge(
     graph = generate_graph_fn(data)
 
     # if molecular_graph_cfg.max_radius == molecular_graph_cfg.max_radius_lr:
-    #    #TODO
+    #    #TODO: reuse radius graph potentially? this is performance tho
     #    pass
 
     # sort edge index according to receiver node
@@ -277,7 +281,8 @@ def data_preprocess_spin_charge(
             node_batch,
             node_padding_mask,
             graph_padding_mask,
-        ) = pad_batch(
+            pos,
+        ) = pad_batch_pos(
             max_num_nodes_per_batch=molecular_graph_cfg.max_num_nodes_per_batch,
             atomic_numbers=atomic_numbers,
             node_direction_expansion=node_direction_expansion,
@@ -288,6 +293,7 @@ def data_preprocess_spin_charge(
             node_batch=data.batch,
             num_graphs=data.num_graphs,
             batch_size=global_cfg.batch_size,
+            pos=pos,
         )
     else:
         node_padding_mask = torch.ones_like(atomic_numbers, dtype=torch.bool)
@@ -336,6 +342,6 @@ def data_preprocess_spin_charge(
         charge=data.charge,
         partial_charge=None,  # TODO: use this if we ever get here
         partial_spin=None,  # TODO: use this if we ever get here
-        # graph=graph,
+        pos=pos,
     )
     return x

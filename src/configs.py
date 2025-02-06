@@ -35,6 +35,7 @@ class GeneralMolecularGraphConfigs:
     otf_graph: bool
     max_neighbors: int
     max_radius: float
+    max_radius_lr: float
     max_num_elements: int
     max_num_nodes_per_batch: int
     enforce_max_neighbors_strictly: bool
