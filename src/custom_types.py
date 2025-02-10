@@ -52,6 +52,8 @@ class GeneralGraphAttentionData:
     partial_charge: (N)
     partial_spin: (N)
     pos: (N, 3)
+    #batch_ind: (N)
+    edge_index_lr: (E, 2) Edge index for long range interactions
     """
 
     atomic_numbers: torch.Tensor
@@ -69,7 +71,9 @@ class GeneralGraphAttentionData:
     charge: torch.Tensor
     partial_charge: torch.Tensor
     partial_spin: torch.Tensor
-    pos: torch.Tensor = None
+    pos: torch.Tensor
+    # batch_ind: torch.Tensor
+    edge_index_lr: torch.Tensor
 
 
 def flatten_graph_attention_data_with_spec(data, spec):
@@ -97,7 +101,6 @@ torch.fx._pytree.register_pytree_flatten_spec(
 torch.export.register_dataclass(
     GeneralGraphAttentionData, serialized_type_name="GeneralGraphAttentionData"
 )
-
 torch.fx._pytree.register_pytree_flatten_spec(
     GeneralGraphAttentionData, flatten_fn_spec=flatten_graph_attention_data_with_spec
 )

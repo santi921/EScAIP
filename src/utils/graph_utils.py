@@ -247,8 +247,10 @@ def pad_batch_pos(
     neighbor_list = F.pad(neighbor_list, (0, 0, 0, pad_size), value=-1)
     neighbor_mask = F.pad(neighbor_mask, (0, 0, 0, pad_size), value=0)
     node_batch = F.pad(node_batch, (0, pad_size), value=num_graphs)
-    if pos is not None:
-        pos = F.pad(pos, (0, 0, 0, pad_size), value=0)
+
+    # knock this out for now
+    # if pos is not None:
+    #    pos = F.pad(pos, (0, 0, 0, pad_size), value=0)
 
     # create the padding mask
     node_padding_mask = torch.ones(
@@ -325,27 +327,32 @@ def compilable_scatter(
     Modified from torch_geometric.utils.scatter_.
     """
     reduce = reduce.lower()
+    # print("reduce", reduce)
 
     def broadcast(src: torch.Tensor, ref: torch.Tensor, dim: int) -> torch.Tensor:
         dim = ref.dim() + dim if dim < 0 else dim
         size = ((1,) * dim) + (-1,) + ((1,) * (ref.dim() - dim - 1))
         return src.view(size).expand_as(ref)
 
+    # print("dim_size", dim_size)
     dim = src.dim() + dim if dim < 0 else dim
     size = src.size()[:dim] + (dim_size,) + src.size()[dim + 1 :]
-
+    # print("reduce", reduce)
     if reduce == "sum" or reduce == "add":
         index = broadcast(index, src, dim)
         return src.new_zeros(size).scatter_add_(dim, index, src)
 
     if reduce == "mean":
+        # print("mean")
         count = src.new_zeros(dim_size)
+        # print("new zeros") breaks here
         count.scatter_add_(0, index, src.new_ones(src.size(dim)))
+        print("scatter add")
         count = count.clamp(min=1)
-
+        print("pre broadcast")
         index = broadcast(index, src, dim)
         out = src.new_zeros(size).scatter_add_(dim, index, src)
-
+        print("final out")
         return out / broadcast(count, out, dim)
 
     if reduce == "None":
@@ -404,8 +411,9 @@ def get_potential(
     return pairwise.sum().view(-1)
 
 
-def potential_full(
-    batch,
+def potential_full_from_pos(
+    pos: torch.Tensor,
+    batch: torch.Tensor,
     q: torch.Tensor,
     radius_lr: float = 5.5,
     sigma: float = 1.0,
@@ -416,7 +424,77 @@ def potential_full(
     """
     Get the potential energy for each atom in the batch.
     Takes:
-        batch: torch_geometric.data.Data object
+        pos: position matrix of shape (n_atoms, 3)
+        batch_ind: batch index of shape (n_atoms, 1)
+        q: charge vector of shape (n_atoms, 1)
+        radius_lr: cutoff radius for long-range interactions
+        sigma: sigma parameter for the error function
+        epsilon: epsilon parameter for the error function
+        twopi: 2 * pi
+        max_num_neighbors: maximum number of neighbors for each atom
+    Returns:∂
+        potential_dict: dictionary of potential energy for each atom
+    """
+    # batch uses pos, batch. That's it
+
+    edge_index = radius_graph(
+        pos,
+        r=radius_lr,
+        batch=batch,
+        max_num_neighbors=max_num_neighbors,
+        flow="source_to_target",
+    )
+
+    # yields list of interactions [source, target]
+    j, i = edge_index
+    distance_vec = pos[j] - pos[i]
+    # red to [n_interactions, 1]
+    edge_dist = distance_vec.norm(dim=-1)
+
+    list_target = edge_index[1]
+    list_source = edge_index[0]
+
+    # get list of neighbors for each node
+    dict_mask_lr = {}
+    dict_ind_neighbors_interactions = {}
+    for i in list_source.unique():
+        dict_mask_lr[i] = list_target[list_source == i]
+        # get list of interactions that include i as a source
+        dict_ind_neighbors_interactions[i] = torch.where(list_source == i)[0]
+
+    # transform distance matrix
+    edge_dist_transformed = (1.0 / (edge_dist + epsilon)) / twopi / 2.0
+    convergence_func = torch.special.erf(edge_dist / sigma / (2.0**0.5))
+
+    # create vector of potentials from ind 0 to n_atoms
+    results = torch.zeros(list_source.max() + 1, device=q.device)
+    potential_dict = {}
+
+    # get potential energy for each atom
+    for ind, mask in dict_mask_lr.items():
+        interactions_now = dict_ind_neighbors_interactions[ind]
+        # get_potential(q, convergence_func, edge_dist_transformed, mask, interactions_now)
+        pot = get_potential(
+            q, convergence_func, edge_dist_transformed, mask, interactions_now
+        )
+        potential_dict[ind] = pot
+        results[ind] = pot
+    return results
+
+
+def potential_full_from_edge_inds(
+    pos: torch.Tensor,
+    edge_index: torch.Tensor,
+    q: torch.Tensor,
+    sigma: float = 1.0,
+    epsilon: float = 1e-6,
+    twopi: float = 2.0 * np.pi,
+):
+    """
+    Get the potential energy for each atom in the batch.
+    Takes:
+        pos: position matrix of shape (n_atoms, 3)
+        edge_index: edge index of shape (2, n_edges)
         q: charge vector of shape (n_atoms, 1)
         radius_lr: cutoff radius for long-range interactions
         sigma: sigma parameter for the error function
@@ -426,18 +504,11 @@ def potential_full(
     Returns:
         potential_dict: dictionary of potential energy for each atom
     """
-
-    edge_index = radius_graph(
-        batch.pos,
-        r=radius_lr,
-        batch=batch.batch,
-        max_num_neighbors=max_num_neighbors,
-        flow="source_to_target",
-    )
+    # batch uses pos, batch. That's it
 
     # yields list of interactions [source, target]
     j, i = edge_index
-    distance_vec = batch.pos[j] - batch.pos[i]
+    distance_vec = pos[j] - pos[i]
     # red to [n_interactions, 1]
     edge_dist = distance_vec.norm(dim=-1)
 

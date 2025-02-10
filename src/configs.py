@@ -34,6 +34,7 @@ class GeneralMolecularGraphConfigs:
     use_pbc_single: bool
     otf_graph: bool
     max_neighbors: int
+    max_neighbors_lr: int
     max_radius: float
     max_radius_lr: float
     max_num_elements: int

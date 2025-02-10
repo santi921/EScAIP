@@ -28,7 +28,11 @@ from .modules import (
 )
 from .utils.data_preprocess import data_preprocess, data_preprocess_spin_charge
 from .utils.nn_utils import no_weight_decay, init_linear_weights
-from .utils.graph_utils import unpad_results, compilable_scatter
+from .utils.graph_utils import (
+    unpad_results,
+    compilable_scatter,
+    potential_full_from_edge_inds,
+)
 
 
 @registry.register_model("EScAIP_backbone")
@@ -164,8 +168,9 @@ class EScAIPBackbone(nn.Module, GraphModelMixin):
     @conditional_grad(torch.enable_grad())
     def forward(self, data: torch_geometric.data.Batch):
         # gradient force
-        if self.regress_forces and not self.global_cfg.direct_force:
-            data.pos.requires_grad_(True)
+        # todo: might need to add global config to specify/detect
+        # if self.regress_forces and not self.global_cfg.direct_force:
+        data.pos.requires_grad_(True)
 
         # preprocess data
         x = self.data_preprocess(data)
@@ -204,6 +209,7 @@ class GeneralEScAIPBackbone(nn.Module, GraphModelMixin):
         self.use_pbc_single = (
             self.molecular_graph_cfg.use_pbc_single
         )  # TODO: remove this when FairChem fixes the bug
+
         generate_graph_fn = partial(
             self.generate_graph,
             cutoff=self.molecular_graph_cfg.max_radius,
@@ -214,10 +220,21 @@ class GeneralEScAIPBackbone(nn.Module, GraphModelMixin):
             use_pbc_single=self.molecular_graph_cfg.use_pbc_single,
         )
 
+        generate_graph_fn_lr = partial(
+            self.generate_graph,
+            cutoff=self.molecular_graph_cfg.max_radius_lr,
+            max_neighbors=self.molecular_graph_cfg.max_neighbors_lr,
+            use_pbc=self.molecular_graph_cfg.use_pbc,
+            otf_graph=self.molecular_graph_cfg.otf_graph,
+            enforce_max_neighbors_strictly=self.molecular_graph_cfg.enforce_max_neighbors_strictly,
+            use_pbc_single=self.molecular_graph_cfg.use_pbc_single,
+        )
+
         # data preprocess
         self.data_preprocess = partial(
             data_preprocess_spin_charge,
             generate_graph_fn=generate_graph_fn,
+            generate_graph_fn_lr=generate_graph_fn_lr,
             global_cfg=self.global_cfg,
             gnn_cfg=self.gnn_cfg,
             molecular_graph_cfg=self.molecular_graph_cfg,
@@ -280,6 +297,8 @@ class GeneralEScAIPBackbone(nn.Module, GraphModelMixin):
             else self.compiled_forward
         )
 
+        # self.forward_fn = self.compiled_forward
+
     def compiled_forward(self, data: GeneralGraphAttentionData):
         # input block
         node_features, edge_features = self.input_block(data)
@@ -312,8 +331,9 @@ class GeneralEScAIPBackbone(nn.Module, GraphModelMixin):
     @conditional_grad(torch.enable_grad())
     def forward(self, data: torch_geometric.data.Batch):
         # gradient force
-        if self.regress_forces and not self.global_cfg.direct_force:
-            data.pos.requires_grad_(True)
+        # TODO: default this to true for now, update later
+        # if (self.regress_forces and not self.global_cfg.direct_force):
+        data.pos.requires_grad_(True)
 
         # preprocess data
         x = self.data_preprocess(data)
@@ -416,7 +436,8 @@ class EScAIPEnergyHead(EScAIPHeadBase):
 
         # the following not compatible with torch.compile (grpah break)
         # energy_output = torch_scatter.scatter(energy_output, node_batch, dim=0, reduce="sum")
-
+        # print("energy_output", energy_output.shape)
+        # print("data.node_batch", data.node_batch.shape)
         energy_output = compilable_scatter(
             src=energy_output,
             index=data.node_batch,
@@ -438,11 +459,14 @@ class EScAIPEnergyHead(EScAIPHeadBase):
         )
 
 
-@registry.register_model("LREScAIPEnergyHead")
-class LREScAIPEnergyHead(EScAIPHeadBase):
-    # ONLY CHARGE, takes one dimension
+@registry.register_model("EScAIPDirectForceEnergyLRHead")
+class EScAIPDirectForceEnergyLRHead(EScAIPHeadBase):
+    # ONLY CHARGE, takes one dimension - later update for spin charges
+
     def __init__(self, backbone: EScAIPBackbone):
         super().__init__(backbone)
+
+        # energy terms
         self.energy_layer_sr = OutputLayer(
             global_cfg=self.global_cfg,
             gnn_cfg=self.gnn_cfg,
@@ -450,7 +474,8 @@ class LREScAIPEnergyHead(EScAIPHeadBase):
             output_type="Scalar",
         )
 
-        self.energy_layer_lr = OutputLayer(
+        # todo: make a custom version of outputlayer
+        self.q_output_lr = OutputLayer(
             global_cfg=self.global_cfg,
             gnn_cfg=self.gnn_cfg,
             reg_cfg=self.reg_cfg,
@@ -458,15 +483,42 @@ class LREScAIPEnergyHead(EScAIPHeadBase):
         )
 
         self.energy_reduce = self.gnn_cfg.energy_reduce
+
+        # force
+        self.force_direction_layer = OutputLayer(
+            global_cfg=self.global_cfg,
+            gnn_cfg=self.gnn_cfg,
+            reg_cfg=self.reg_cfg,
+            output_type="Vector",
+        )
+        self.force_magnitude_layer = OutputLayer(
+            global_cfg=self.global_cfg,
+            gnn_cfg=self.gnn_cfg,
+            reg_cfg=self.reg_cfg,
+            output_type="Scalar",
+        )
+
         self.post_init(gain=0.01)
 
-    def compiled_forward(self, node_features, data: GraphAttentionData):
+    def get_charges(self, node_features, data: GraphAttentionData):
+        q_pred = self.q_output_lr(node_features)
+        return q_pred
+
+    def compiled_forward(self, edge_features, node_features, data: GraphAttentionData):
+        # print("compiled_forward - start")
         energy_output_sr = self.energy_layer_sr(node_features)
-        # energy_output_lr = self.energy_output_lr(node_features)
+        # print("energy_output_sr", energy_output_sr.shape)
+        q_output_lr = self.get_charges(node_features, data)
+        # print("q_output_lr", q_output_lr.shape)
 
         # the following not compatible with torch.compile (grpah break)
         # energy_output = torch_scatter.scatter(energy_output, node_batch, dim=0, reduce="sum")
 
+        # short range
+        # print("energy_output_sr--> entering!")
+        # print("data.node_batch", data.node_batch.shape)
+        # print("data.graph_padding_mask.shape[0]", data.graph_padding_mask.shape[0])
+        # print("energy_output_sr", energy_output_sr.shape)
         energy_output_sr = compilable_scatter(
             src=energy_output_sr,
             index=data.node_batch,
@@ -474,19 +526,104 @@ class LREScAIPEnergyHead(EScAIPHeadBase):
             dim=0,
             reduce=self.energy_reduce,
         )
-        return energy_output_sr
+        # print("energy_output_sr", energy_output_sr.shape)
+        # long range
+
+        energy_output_lr = potential_full_from_edge_inds(
+            edge_index=data.edge_index_lr,
+            pos=data.pos,
+            q=q_output_lr,
+            sigma=1.0,
+            epsilon=1e-6,
+        )
+        # print("energy_output_lr", energy_output_lr.shape)
+
+        forces_lr = (
+            -1
+            * torch.autograd.grad(
+                energy_output_lr.sum(),
+                data.pos,
+                create_graph=self.training,
+                retain_graph=True,
+            )[0]
+        )
+
+        node_inds_no_pad = unpad_results(
+            results={"node_padding": data.node_batch},
+            node_padding_mask=data.node_padding_mask,
+            graph_padding_mask=data.graph_padding_mask,
+        )["node_padding"]
+        # print("node_inds_no_pad", node_inds_no_pad.shape)
+        compiled_lr_energies = compilable_scatter(
+            src=energy_output_lr,
+            index=node_inds_no_pad,
+            dim_size=data.graph_padding_mask.shape[0],
+            dim=0,
+            reduce="mean",
+        )
+        # print("compiled_lr_energies", compiled_lr_energies.shape)
+        energy_lr = unpad_results(
+            results={"energy": compiled_lr_energies},
+            node_padding_mask=data.node_padding_mask,
+            graph_padding_mask=data.graph_padding_mask,
+        )["energy"]
+
+        # get force direction from edge features
+        force_direction = self.force_direction_layer(
+            edge_features
+        )  # (num_nodes, max_neighbor, 3)
+        force_direction = (
+            force_direction * data.edge_direction
+        )  # (num_nodes, max_neighbor, 3)
+        force_direction = (force_direction * data.neighbor_mask.unsqueeze(-1)).sum(
+            dim=1
+        )  # (num_nodes, 3)
+        # get force magnitude from node readouts
+        force_magnitude = self.force_magnitude_layer(node_features)  # (num_nodes, 1)
+        # get output force
+        forces_output = force_direction * force_magnitude
+
+        return {
+            "energy_sr": energy_output_sr,
+            "energy_lr": energy_lr,
+            "charges": q_output_lr,
+            "forces_sr": forces_output,
+            "forces_lr": forces_lr,
+        }
 
     def forward(self, data, emb: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
-        energy_output_sr = self.forward_fn(
+        res_dict = self.forward_fn(
+            edge_features=emb["edge_features"],
             node_features=emb["node_features"],
             data=emb["data"],
         )
 
-        return unpad_results(
-            results={"energy": energy_output_sr},
+        # only sr need to be unpadded
+        unpad_dict = {
+            "energy_sr": res_dict["energy_sr"],
+            "forces_sr": res_dict["forces_sr"],
+        }
+
+        # TODO: can we unpad further up?
+        res_unpad = unpad_results(
+            results=unpad_dict,
             node_padding_mask=emb["data"].node_padding_mask,
             graph_padding_mask=emb["data"].graph_padding_mask,
         )
+
+        # sum the energies
+        # TODO: scale by self.global_cfg.lr_weight
+        energy_output = res_unpad["energy_sr"].view(-1) + res_dict["energy_lr"]
+        forces_output = res_unpad["forces_sr"]  # + res_dict["forces_lr"]
+
+        # yells at you if you don't use all of these terms for loss calc
+        return {
+            "energy": energy_output,
+            "forces": forces_output,
+            "charges": res_dict[
+                "charges"
+            ],  # makes it easier to train on these later on
+        }
 
 
 @registry.register_model("EScAIP_grad_energy_force_head")
@@ -515,7 +652,10 @@ class EScAIPGradientEnergyForceHead(EScAIPEnergyHead):
         forces_output = (
             -1
             * torch.autograd.grad(
-                energy_output.sum(), data.pos, create_graph=self.training
+                energy_output.sum(),
+                data.pos,
+                create_graph=self.training,
+                retain_graph=True,
             )[0]
         )
 

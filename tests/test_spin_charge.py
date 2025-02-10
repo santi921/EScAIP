@@ -6,7 +6,10 @@ from tests.test_utils import (
     load_preprocess_example,
     load_data_model_general,
 )
-from src.utils.graph_utils import get_potential, potential_full
+from src.utils.graph_utils import (
+    get_potential,
+    potential_full_from_pos,
+)
 
 
 class TestSpinCharge:
@@ -52,8 +55,11 @@ class TestSpinCharge:
         n_nodes = self.batch.num_nodes
         q = torch.zeros(n_nodes, device=self.batch.pos.device)
         q[0] = 1.0
-        potential = potential_full(
-            batch=self.batch,
+        batch_ind = self.batch.batch
+        pos = self.batch.pos
+        potential = potential_full_from_pos(
+            batch=batch_ind,
+            pos=pos,
             q=q,
             sigma=sigma,
             epsilon=epsilon,

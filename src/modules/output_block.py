@@ -58,13 +58,14 @@ class OutputLayer(nn.Module):
         global_cfg: GlobalConfigs,
         gnn_cfg: GraphNeuralNetworksConfigs,
         reg_cfg: RegularizationConfigs,
-        output_type: Literal["Vector", "Scalar"],
+        output_type: Literal["Vector", "TwoComp", "Scalar"],
     ):
         super().__init__()
 
         self.output_type = output_type
         output_type_dict = {
             "Vector": 3,
+            "TwoComp": 2,
             "Scalar": 1,
         }
         assert (

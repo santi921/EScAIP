@@ -169,6 +169,7 @@ def data_preprocess(
 def data_preprocess_spin_charge(
     data,
     generate_graph_fn: callable,
+    generate_graph_fn_lr: callable,
     global_cfg: GlobalConfigs,
     gnn_cfg: GraphNeuralNetworksConfigs,
     molecular_graph_cfg: GeneralMolecularGraphConfigs,
@@ -196,6 +197,8 @@ def data_preprocess_spin_charge(
 
     # generate graph
     graph = generate_graph_fn(data)
+    graph_lr = generate_graph_fn_lr(data)
+    edge_index_lr = graph_lr.edge_index
 
     # if molecular_graph_cfg.max_radius == molecular_graph_cfg.max_radius_lr:
     #    #TODO: reuse radius graph potentially? this is performance tho
@@ -281,7 +284,7 @@ def data_preprocess_spin_charge(
             node_batch,
             node_padding_mask,
             graph_padding_mask,
-            pos,
+            _,
         ) = pad_batch_pos(
             max_num_nodes_per_batch=molecular_graph_cfg.max_num_nodes_per_batch,
             atomic_numbers=atomic_numbers,
@@ -293,7 +296,7 @@ def data_preprocess_spin_charge(
             node_batch=data.batch,
             num_graphs=data.num_graphs,
             batch_size=global_cfg.batch_size,
-            pos=pos,
+            pos=None,
         )
     else:
         node_padding_mask = torch.ones_like(atomic_numbers, dtype=torch.bool)
@@ -343,5 +346,6 @@ def data_preprocess_spin_charge(
         partial_charge=None,  # TODO: use this if we ever get here
         partial_spin=None,  # TODO: use this if we ever get here
         pos=pos,
+        edge_index_lr=edge_index_lr,
     )
     return x
