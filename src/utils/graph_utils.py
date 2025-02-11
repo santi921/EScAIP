@@ -347,12 +347,14 @@ def compilable_scatter(
         count = src.new_zeros(dim_size)
         # print("new zeros") breaks here
         count.scatter_add_(0, index, src.new_ones(src.size(dim)))
-        print("scatter add")
+        # print("scatter add")
         count = count.clamp(min=1)
-        print("pre broadcast")
+        # print("pre broadcast")
         index = broadcast(index, src, dim)
+        # this errors out sometimes
+
         out = src.new_zeros(size).scatter_add_(dim, index, src)
-        print("final out")
+        # print("final out")
         return out / broadcast(count, out, dim)
 
     if reduce == "None":
@@ -489,6 +491,7 @@ def potential_full_from_edge_inds(
     sigma: float = 1.0,
     epsilon: float = 1e-6,
     twopi: float = 2.0 * np.pi,
+    padding_dim: torch.Tensor = None,
 ):
     """
     Get the potential energy for each atom in the batch.
@@ -528,9 +531,11 @@ def potential_full_from_edge_inds(
     convergence_func = torch.special.erf(edge_dist / sigma / (2.0**0.5))
 
     # create vector of potentials from ind 0 to n_atoms
-    results = torch.zeros(list_source.max() + 1, device=q.device)
+    if padding_dim is not None:
+        results = torch.zeros(padding_dim, device=q.device)
+    else:
+        results = torch.zeros(list_source.max() + 1, device=q.device)
     potential_dict = {}
-
     # get potential energy for each atom
     for ind, mask in dict_mask_lr.items():
         interactions_now = dict_ind_neighbors_interactions[ind]
@@ -540,4 +545,5 @@ def potential_full_from_edge_inds(
         )
         potential_dict[ind] = pot
         results[ind] = pot
+
     return results

@@ -23,6 +23,7 @@ model:
     enforce_max_neighbors_strictly: true
     distance_function: gaussian
     max_neighbors: 30
+    max_neighbors_lr: 30
     max_num_elements: 90
     max_radius: 5.0
     max_radius_lr: 5.0

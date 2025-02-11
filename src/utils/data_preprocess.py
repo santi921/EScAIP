@@ -249,6 +249,14 @@ def data_preprocess_spin_charge(
 
         # create spin tensor
         spin = data.spin
+        # print type of data
+        # print("spin type", type(spin))
+        # print("spin length", len(spin))
+        # print(
+        #    "data",
+        # )
+        # print("spin", spin, "n_nodes_graphs", n_nodes_graphs)
+
         spin_expand = one_hot_encode(
             spin,
             n_nodes_graphs,
