@@ -403,6 +403,7 @@ class EScAIPDirectForceHead(EScAIPHeadBase):
         # get output force
         return force_direction * force_magnitude  # (num_nodes, 3)
 
+    @conditional_grad(torch.enable_grad())
     def forward(self, data, emb: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
         force_output = self.forward_fn(
             edge_features=emb["edge_features"],
@@ -445,6 +446,7 @@ class EScAIPEnergyHead(EScAIPHeadBase):
         )
         return energy_output
 
+    @conditional_grad(torch.enable_grad())
     def forward(self, data, emb: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
         energy_output = self.forward_fn(
             node_features=emb["node_features"],
@@ -457,7 +459,7 @@ class EScAIPEnergyHead(EScAIPHeadBase):
         )
 
 
-@registry.register_model("EScAIPDirectForceEnergyLRHead")
+@registry.register_model("EScAIP_direct_force_energy_lr_head")
 class EScAIPDirectForceEnergyLRHead(EScAIPHeadBase):
     # ONLY CHARGE, takes one dimension - later update for spin charges
 
@@ -496,11 +498,25 @@ class EScAIPDirectForceEnergyLRHead(EScAIPHeadBase):
             output_type="Scalar",
         )
 
+        self.constrain_charge = False
+        self.ret_charges = False
+        # print("constrain_charge", self.gnn_cfg.constrain_charge)
+        if bool(self.gnn_cfg.constrain_charge):
+            self.constrain_charge = True
+            self.ret_charges = True
+
         # get total charge and regularize with that
         self.post_init(gain=0.01)
 
-    def get_charges(self, node_features, data: GraphAttentionData):
+    def get_charges(self, node_features, data: GraphAttentionData, unpad: bool = False):
         q_pred = self.q_output_lr(node_features)
+        if unpad:
+            q_pred = unpad_results(
+                results={"charges": q_pred},
+                node_padding_mask=data.node_padding_mask,
+                graph_padding_mask=data.graph_padding_mask,
+            )["charges"]
+
         return q_pred
 
     def get_sr_forces(self, edge_features, node_features, data: GraphAttentionData):
@@ -520,11 +536,19 @@ class EScAIPDirectForceEnergyLRHead(EScAIPHeadBase):
         forces_output = force_direction * force_magnitude
         return forces_output
 
-    def get_lr_energies(self, edge_features, node_features, data: GraphAttentionData):
+    def get_lr_energies(
+        self,
+        edge_features,
+        node_features,
+        data: GraphAttentionData,
+        return_charges: bool = False,
+    ):
+        charges_padded = self.get_charges(node_features, data)
+
         energy_output_lr = potential_full_from_edge_inds(
             edge_index=data.edge_index_lr,
             pos=data.pos,
-            q=self.get_charges(node_features, data),
+            q=charges_padded,
             sigma=1.0,
             epsilon=1e-6,
             padding_dim=data.node_padding_mask.shape[0],
@@ -537,7 +561,19 @@ class EScAIPDirectForceEnergyLRHead(EScAIPHeadBase):
             dim=0,
             reduce="mean",
         )
-        return scattered_energy_lr
+        ret_dict = {"energy_lr": scattered_energy_lr}
+
+        if return_charges:
+            charges_scattered = compilable_scatter(
+                src=charges_padded,
+                index=data.node_batch,
+                dim_size=data.graph_padding_mask.shape[0],
+                dim=0,
+                reduce="sum",
+            )
+            ret_dict["charges"] = charges_scattered
+
+        return ret_dict
 
     def compiled_forward(self, edge_features, node_features, data: GraphAttentionData):
         energy_output_sr = self.energy_layer_sr(node_features)
@@ -550,37 +586,31 @@ class EScAIPDirectForceEnergyLRHead(EScAIPHeadBase):
             reduce=self.energy_reduce,
         )
 
-        # q_output_lr = self.get_charges(node_features, data)
-
-        """
-        total_charges = compilable_scatter(
-            src=q_output_lr,
-            index=data.node_batch,
-            dim_size=data.graph_padding_mask.shape[0],
-            dim=0,
-            reduce="mean",
-        )
-        """
-
         forces_output = self.get_sr_forces(
             edge_features=edge_features,
             node_features=node_features,
             data=data,
         )
 
-        energy_lr = self.get_lr_energies(
+        energy_lr_dict = self.get_lr_energies(
             edge_features=edge_features,
             node_features=node_features,
             data=data,
+            return_charges=self.ret_charges,
         )
 
-        return {
+        ret_dict = {
             "energy_sr": energy_output_sr,
-            "energy_lr": energy_lr,
+            "energy_lr": energy_lr_dict["energy_lr"],
             "forces_sr": forces_output,
-            # "forces_lr": forces_lr,
         }
 
+        if self.ret_charges:
+            ret_dict["charges"] = energy_lr_dict["charges"].view(-1)
+
+        return ret_dict
+
+    # @conditional_grad(torch.enable_grad())
     def forward(self, data, emb: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
         res_dict_raw = self.forward_fn(
             edge_features=emb["edge_features"],
@@ -594,6 +624,11 @@ class EScAIPDirectForceEnergyLRHead(EScAIPHeadBase):
             "forces_sr": res_dict_raw["forces_sr"],
             "energy_lr": res_dict_raw["energy_lr"],
         }
+        # print("constrain_charge", self.constrain_charge)
+        if self.constrain_charge:
+            # print("charges")
+            # print(res_dict_raw["charges"])
+            unpad_dict["charges"] = res_dict_raw["charges"]
 
         res_unpad = unpad_results(
             results=unpad_dict,
@@ -606,16 +641,210 @@ class EScAIPDirectForceEnergyLRHead(EScAIPHeadBase):
         energy_output = res_unpad["energy_sr"].view(-1) + res_unpad["energy_lr"].view(
             -1
         )
-        forces_output = res_unpad["forces_sr"]  # + res_dict["forces_lr"]
+        forces_output = res_unpad["forces_sr"]
 
-        # yells at you if you don't use all of these terms for loss calc
-        return {
+        ret_dict = {
             "energy": energy_output,
             "forces": forces_output,
-            # "charges": res_dict[
-            #    "charges"
-            # ],  # makes it easier to train on these later on
         }
+        if self.constrain_charge:
+            ret_dict["charge"] = res_unpad["charges"]
+            # print(ret_dict["charges"].shape, ret_dict["energy"].shape, ret_dict["forces"].shape)
+
+        return ret_dict
+
+
+@registry.register_model("EScAIP_grad_force_energy_lr_head")
+class EScAIPGradientForceEnergyLRHead(EScAIPHeadBase):
+    # ONLY CHARGE, takes one dimension - later update for spin charges
+
+    def __init__(self, backbone: EScAIPBackbone):
+        super().__init__(backbone)
+
+        # energy terms
+        self.energy_layer_sr = OutputLayer(
+            global_cfg=self.global_cfg,
+            gnn_cfg=self.gnn_cfg,
+            reg_cfg=self.reg_cfg,
+            output_type="Scalar",
+        )
+
+        # todo: make a custom version of outputlayer
+        self.q_output_lr = OutputLayer(
+            global_cfg=self.global_cfg,
+            gnn_cfg=self.gnn_cfg,
+            reg_cfg=self.reg_cfg,
+            output_type="Scalar",
+        )
+
+        self.energy_reduce = self.gnn_cfg.energy_reduce
+
+        # force
+        self.force_direction_layer = OutputLayer(
+            global_cfg=self.global_cfg,
+            gnn_cfg=self.gnn_cfg,
+            reg_cfg=self.reg_cfg,
+            output_type="Vector",
+        )
+        self.force_magnitude_layer = OutputLayer(
+            global_cfg=self.global_cfg,
+            gnn_cfg=self.gnn_cfg,
+            reg_cfg=self.reg_cfg,
+            output_type="Scalar",
+        )
+
+        self.constrain_charge = False
+        self.ret_charges = False
+
+        if bool(self.gnn_cfg.constrain_charge):
+            self.constrain_charge = True
+            self.ret_charges = True
+
+        # get total charge and regularize with that
+        self.post_init(gain=0.01)
+
+    def get_charges(self, node_features, data: GraphAttentionData, unpad: bool = False):
+        q_pred = self.q_output_lr(node_features)
+        if unpad:
+            q_pred = unpad_results(
+                results={"charges": q_pred},
+                node_padding_mask=data.node_padding_mask,
+                graph_padding_mask=data.graph_padding_mask,
+            )["charges"]
+
+        return q_pred
+
+    def get_lr_energies(
+        self,
+        edge_features,
+        node_features,
+        data: GraphAttentionData,
+        return_charges: bool = False,
+    ):
+        charges_padded = self.get_charges(node_features, data)
+        energy_output_lr = potential_full_from_edge_inds(
+            edge_index=data.edge_index_lr,
+            pos=data.pos,
+            q=charges_padded,
+            sigma=1.0,
+            epsilon=1e-6,
+            padding_dim=data.node_padding_mask.shape[0],
+        )
+
+        scattered_energy_lr = compilable_scatter(
+            src=energy_output_lr,
+            index=data.node_batch,
+            dim_size=data.graph_padding_mask.shape[0],
+            dim=0,
+            reduce="mean",
+        )
+
+        ret_dict = {"energy_lr": scattered_energy_lr}
+
+        if return_charges:
+            charges_scattered = compilable_scatter(
+                src=charges_padded,
+                index=data.node_batch,
+                dim_size=data.graph_padding_mask.shape[0],
+                dim=0,
+                reduce="sum",
+            )
+
+            ret_dict["charges"] = charges_scattered
+
+        return ret_dict
+
+    def compiled_forward(self, edge_features, node_features, data: GraphAttentionData):
+        energy_output_sr = self.energy_layer_sr(node_features)
+
+        energy_output_sr = compilable_scatter(
+            src=energy_output_sr,
+            index=data.node_batch,
+            dim_size=data.graph_padding_mask.shape[0],
+            dim=0,
+            reduce=self.energy_reduce,
+        )
+
+        energy_lr_dict = self.get_lr_energies(
+            edge_features=edge_features,
+            node_features=node_features,
+            data=data,
+            return_charges=self.ret_charges,
+        )
+
+        forces_output_sr = (
+            -1
+            * torch.autograd.grad(
+                energy_output_sr.sum(),
+                data.pos,
+                create_graph=self.training,
+                retain_graph=True,
+            )[0]
+        )
+
+        forces_output_lr = (
+            -1
+            * torch.autograd.grad(
+                energy_lr_dict["energy_lr"].sum(),
+                data.pos,
+                create_graph=self.training,
+                retain_graph=True,
+            )[0]
+        )
+
+        ret_dict = {
+            "energy_sr": energy_output_sr,
+            "energy_lr": energy_lr_dict["energy_lr"],
+            "forces_sr": forces_output_sr,
+            "forces_lr": forces_output_lr,
+        }
+
+        if self.ret_charges:
+            ret_dict["charges"] = energy_lr_dict["charges"].view(-1)
+
+        return ret_dict
+
+    @conditional_grad(torch.enable_grad())
+    def forward(self, data, emb: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
+        res_dict_raw = self.forward_fn(
+            edge_features=emb["edge_features"],
+            node_features=emb["node_features"],
+            data=emb["data"],
+        )
+
+        # only sr need to be unpadded
+        unpad_dict = {
+            "energy_sr": res_dict_raw["energy_sr"],
+            "forces_sr": res_dict_raw["forces_sr"],
+            "energy_lr": res_dict_raw["energy_lr"],
+            "forces_lr": res_dict_raw["forces_lr"],
+        }
+
+        if self.constrain_charge:
+            unpad_dict["charges"] = res_dict_raw["charges"]
+
+        res_unpad = unpad_results(
+            results=unpad_dict,
+            node_padding_mask=emb["data"].node_padding_mask,
+            graph_padding_mask=emb["data"].graph_padding_mask,
+        )
+
+        # sum the energies
+        energy_output = res_unpad["energy_sr"].view(-1) + res_unpad["energy_lr"].view(
+            -1
+        )
+        forces_output = res_unpad["forces_sr"] + res_unpad["forces_lr"]
+
+        # yells at you if you don't use all of these terms for loss calc
+        ret_dict = {
+            "energy": energy_output,
+            "forces": forces_output,
+        }
+
+        if self.constrain_charge:
+            ret_dict["charge"] = res_unpad["charges"]
+
+        return ret_dict
 
 
 @registry.register_model("EScAIP_grad_energy_force_head")
@@ -627,6 +856,7 @@ class EScAIPGradientEnergyForceHead(EScAIPEnergyHead):
     def __init__(self, backbone: EScAIPBackbone):
         super().__init__(backbone)
 
+    @conditional_grad(torch.enable_grad())
     def forward(self, data, emb: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
         energy_output = self.energy_layer(emb["node_features"])
 
@@ -723,6 +953,7 @@ class EScAIPRank2Head(EScAIPHeadBase):
         )
         return irrep2_output, scalar_output.view(-1)
 
+    @conditional_grad(torch.enable_grad())
     def forward(self, data, emb: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
         irrep2_output, scalar_output = self.forward_fn(
             node_features=emb["node_features"],

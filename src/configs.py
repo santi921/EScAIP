@@ -69,6 +69,28 @@ class GraphNeuralNetworksConfigs:
 
 
 @dataclass
+class GeneralGraphNeuralNetworksConfigs:
+    num_layers: int
+    atom_embedding_size: int
+    node_direction_embedding_size: int
+    node_direction_expansion_size: int
+    edge_distance_expansion_size: int
+    edge_distance_embedding_size: int
+    atten_name: Literal[
+        "math",
+        "memory_efficient",
+        "flash",
+    ]
+    atten_num_heads: int
+    readout_hidden_layer_multiplier: int
+    output_hidden_layer_multiplier: int
+    ffn_hidden_layer_multiplier: int
+    use_angle_embedding: bool = True
+    energy_reduce: Literal["sum", "mean"] = "mean"
+    constrain_charge: bool = False
+
+
+@dataclass
 class RegularizationConfigs:
     mlp_dropout: float
     atten_dropout: float
@@ -88,7 +110,7 @@ class EScAIPConfigs:
 class GeneralEScAIPConfigs:
     global_cfg: GlobalConfigs
     molecular_graph_cfg: GeneralMolecularGraphConfigs
-    gnn_cfg: GraphNeuralNetworksConfigs
+    gnn_cfg: GeneralGraphNeuralNetworksConfigs
     reg_cfg: RegularizationConfigs
 
 
