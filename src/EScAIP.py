@@ -54,6 +54,7 @@ class EScAIPBackbone(nn.Module, GraphModelMixin):
 
         # for trainer
         self.regress_forces = cfg.global_cfg.regress_forces
+        self.direct_force = cfg.global_cfg.direct_force
         self.use_pbc = cfg.molecular_graph_cfg.use_pbc
 
         # graph generation
@@ -203,6 +204,8 @@ class GeneralEScAIPBackbone(nn.Module, GraphModelMixin):
 
         # for trainer
         self.regress_forces = cfg.global_cfg.regress_forces
+        self.direct_force = cfg.global_cfg.direct_force
+
         self.use_pbc = cfg.molecular_graph_cfg.use_pbc
 
         # graph generation
@@ -352,6 +355,8 @@ class EScAIPHeadBase(nn.Module, HeadInterface):
         self.molecular_graph_cfg = backbone.molecular_graph_cfg
         self.gnn_cfg = backbone.gnn_cfg
         self.reg_cfg = backbone.reg_cfg
+        self.regress_forces = backbone.regress_forces
+        self.direct_forces = backbone.direct_force
 
     def post_init(self, gain=1.0):
         # init weights
@@ -372,6 +377,9 @@ class EScAIPHeadBase(nn.Module, HeadInterface):
 class EScAIPDirectForceHead(EScAIPHeadBase):
     def __init__(self, backbone: EScAIPBackbone):
         super().__init__(backbone)
+        # self.regress_forces = backbone.regress_forces
+        # self.direct_forces = backbone.direct_forces
+
         self.force_direction_layer = OutputLayer(
             global_cfg=self.global_cfg,
             gnn_cfg=self.gnn_cfg,
@@ -422,6 +430,9 @@ class EScAIPDirectForceHead(EScAIPHeadBase):
 class EScAIPEnergyHead(EScAIPHeadBase):
     def __init__(self, backbone: EScAIPBackbone):
         super().__init__(backbone)
+        # self.regress_forces = backbone.regress_forces
+        # self.direct_forces = backbone.direct_forces
+
         self.energy_layer = OutputLayer(
             global_cfg=self.global_cfg,
             gnn_cfg=self.gnn_cfg,
@@ -465,6 +476,8 @@ class EScAIPDirectForceEnergyLRHead(EScAIPHeadBase):
 
     def __init__(self, backbone: EScAIPBackbone):
         super().__init__(backbone)
+        # self.regress_forces = backbone.regress_forces
+        # self.direct_forces = backbone.direct_forces
 
         # energy terms
         self.energy_layer_sr = OutputLayer(
@@ -660,6 +673,8 @@ class EScAIPGradientForceEnergyLRHead(EScAIPHeadBase):
 
     def __init__(self, backbone: EScAIPBackbone):
         super().__init__(backbone)
+        # self.regress_forces = backbone.regress_forces
+        # self.direct_forces = backbone.direct_forces
 
         # energy terms
         self.energy_layer_sr = OutputLayer(
@@ -695,6 +710,8 @@ class EScAIPGradientForceEnergyLRHead(EScAIPHeadBase):
 
         self.constrain_charge = False
         self.ret_charges = False
+        self.regress_forces = backbone.regress_forces
+        self.direct_forces = backbone.direct_forces
 
         if bool(self.gnn_cfg.constrain_charge):
             self.constrain_charge = True
@@ -913,6 +930,8 @@ class EScAIPRank2Head(EScAIPHeadBase):
             reg_cfg=self.reg_cfg,
             output_type="Scalar",
         )
+        # self.regress_forces = backbone.regress_forces
+        # self.direct_forces = backbone.direct_forces
 
         self.post_init()
 
