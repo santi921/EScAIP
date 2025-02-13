@@ -294,13 +294,13 @@ class GeneralEScAIPBackbone(nn.Module, GraphModelMixin):
         # log recompiles
         torch._logging.set_logs(recompiles=True)
 
+        # print("use compile", self.global_cfg.use_compile)
+        # print("atten name", self.gnn_cfg.atten_name)
         self.forward_fn = (
             torch.compile(self.compiled_forward)
             if self.global_cfg.use_compile
             else self.compiled_forward
         )
-
-        # self.forward_fn = self.compiled_forward
 
     def compiled_forward(self, data: GeneralGraphAttentionData):
         # input block
@@ -476,8 +476,6 @@ class EScAIPDirectForceEnergyLRHead(EScAIPHeadBase):
 
     def __init__(self, backbone: EScAIPBackbone):
         super().__init__(backbone)
-        # self.regress_forces = backbone.regress_forces
-        # self.direct_forces = backbone.direct_forces
 
         # energy terms
         self.energy_layer_sr = OutputLayer(
@@ -623,13 +621,19 @@ class EScAIPDirectForceEnergyLRHead(EScAIPHeadBase):
 
         return ret_dict
 
-    # @conditional_grad(torch.enable_grad())
+    @conditional_grad(torch.enable_grad())
     def forward(self, data, emb: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
         res_dict_raw = self.forward_fn(
             edge_features=emb["edge_features"],
             node_features=emb["node_features"],
             data=emb["data"],
         )
+
+        # for k, v in res_dict_raw.items():
+        #    print(k, v.shape)
+
+        # print("node_padding_mask", emb["data"].node_padding_mask.shape)
+        # print("graph_padding_mask", emb["data"].graph_padding_mask.shape)
 
         # only sr need to be unpadded
         unpad_dict = {
@@ -662,7 +666,6 @@ class EScAIPDirectForceEnergyLRHead(EScAIPHeadBase):
         }
         if self.constrain_charge:
             ret_dict["charge"] = res_unpad["charges"]
-            # print(ret_dict["charges"].shape, ret_dict["energy"].shape, ret_dict["forces"].shape)
 
         return ret_dict
 
@@ -673,8 +676,6 @@ class EScAIPGradientForceEnergyLRHead(EScAIPHeadBase):
 
     def __init__(self, backbone: EScAIPBackbone):
         super().__init__(backbone)
-        # self.regress_forces = backbone.regress_forces
-        # self.direct_forces = backbone.direct_forces
 
         # energy terms
         self.energy_layer_sr = OutputLayer(
@@ -711,14 +712,20 @@ class EScAIPGradientForceEnergyLRHead(EScAIPHeadBase):
         self.constrain_charge = False
         self.ret_charges = False
         self.regress_forces = backbone.regress_forces
-        self.direct_forces = backbone.direct_forces
+        self.direct_force = backbone.direct_force
 
         if bool(self.gnn_cfg.constrain_charge):
             self.constrain_charge = True
             self.ret_charges = True
 
         # get total charge and regularize with that
-        self.post_init(gain=0.01)
+        # self.post_init(gain=0.01)
+
+    def post_init(self, gain=1.0):
+        # init weights
+        self.apply(partial(init_linear_weights, gain=gain))
+
+        self.forward_fn = self.forward
 
     def get_charges(self, node_features, data: GraphAttentionData, unpad: bool = False):
         q_pred = self.q_output_lr(node_features)
@@ -789,13 +796,20 @@ class EScAIPGradientForceEnergyLRHead(EScAIPHeadBase):
             return_charges=self.ret_charges,
         )
 
+        # reshape energy lr to n, 1
+        energy_lr_dict["energy_lr"] = energy_lr_dict["energy_lr"].view(-1, 1)
+
+        # print("energy_lr_dict", energy_lr_dict["energy_lr"].shape)
+        # print("energy_output_sr", energy_output_sr.shape)
+        # print("data.pos", data.pos.shape)
+
         forces_output_sr = (
             -1
             * torch.autograd.grad(
                 energy_output_sr.sum(),
                 data.pos,
                 create_graph=self.training,
-                retain_graph=True,
+                # retain_graph=True,
             )[0]
         )
 
@@ -805,10 +819,11 @@ class EScAIPGradientForceEnergyLRHead(EScAIPHeadBase):
                 energy_lr_dict["energy_lr"].sum(),
                 data.pos,
                 create_graph=self.training,
-                retain_graph=True,
+                # retain_graph=True,
             )[0]
         )
 
+        # dummy_tensor = torch.zeros_like(data.pos, requires_grad=True)
         ret_dict = {
             "energy_sr": energy_output_sr,
             "energy_lr": energy_lr_dict["energy_lr"],
@@ -823,22 +838,38 @@ class EScAIPGradientForceEnergyLRHead(EScAIPHeadBase):
 
     @conditional_grad(torch.enable_grad())
     def forward(self, data, emb: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
-        res_dict_raw = self.forward_fn(
+        # print("HEHE ** " * 10)
+        res_dict_raw = self.compiled_forward(
             edge_features=emb["edge_features"],
             node_features=emb["node_features"],
             data=emb["data"],
         )
+        """
+        energy_lr_dict = self.get_lr_energies(
+            edge_features=emb["edge_features"],
+            node_features=emb["node_features"],
+            data=emb["data"],
+            return_charges=True,
+        )
+        """
+        # print("charges", energy_lr_dict["charges"].shape)
 
         # only sr need to be unpadded
         unpad_dict = {
             "energy_sr": res_dict_raw["energy_sr"],
-            "forces_sr": res_dict_raw["forces_sr"],
+            # "forces_sr": res_dict_raw["forces_sr"],
             "energy_lr": res_dict_raw["energy_lr"],
-            "forces_lr": res_dict_raw["forces_lr"],
+            # "forces_lr": res_dict_raw["forces_lr"],
         }
 
         if self.constrain_charge:
             unpad_dict["charges"] = res_dict_raw["charges"]
+
+        # for k, v in unpad_dict.items():
+        #    print(k, v.shape)
+
+        # print("node_padding_mask", emb["data"].node_padding_mask.shape)
+        # print("graph_padding_mask", emb["data"].graph_padding_mask.shape)
 
         res_unpad = unpad_results(
             results=unpad_dict,
@@ -850,7 +881,7 @@ class EScAIPGradientForceEnergyLRHead(EScAIPHeadBase):
         energy_output = res_unpad["energy_sr"].view(-1) + res_unpad["energy_lr"].view(
             -1
         )
-        forces_output = res_unpad["forces_sr"] + res_unpad["forces_lr"]
+        forces_output = res_dict_raw["forces_sr"] + res_dict_raw["forces_lr"]
 
         # yells at you if you don't use all of these terms for loss calc
         ret_dict = {
@@ -894,7 +925,7 @@ class EScAIPGradientEnergyForceHead(EScAIPEnergyHead):
                 energy_output.sum(),
                 data.pos,
                 create_graph=self.training,
-                retain_graph=True,
+                # retain_graph=True,
             )[0]
         )
 

@@ -107,7 +107,7 @@ def map_sender_receiver_feature(sender_feature, receiver_feature, neighbor_list)
     return (sender_feature, receiver_feature)
 
 
-@torch.compile
+# @torch.compile
 def get_attn_mask(
     edge_direction: torch.Tensor,
     neighbor_mask: torch.Tensor,
