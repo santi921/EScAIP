@@ -16,7 +16,7 @@ model:
     use_rotation_force: false
     batch_size: 3
 
-    # Molecular Graph Configs
+    # Molecular Graph Configzs
     avg_degree: 30
     avg_num_nodes: 73.0
     max_num_nodes_per_batch: 150
@@ -28,6 +28,7 @@ model:
     otf_graph: true
     use_pbc: true
     use_pbc_single: false
+
 
     # Graph Neural Networks Configs
     atom_embedding_size: 65

@@ -8,7 +8,7 @@ from torch_geometric.data import Batch
 from functools import partial
 
 from src.utils.graph_utils import one_hot_encode
-from src.configs import GeneralMolecularGraphConfigs
+from src.configs import MolecularGraphConfigs
 from src.utils.data_preprocess import data_preprocess_spin_charge
 
 
@@ -19,7 +19,7 @@ def load_data_model(
     batch = torch.load(data_path)
     with open(model_path) as f:
         config = yaml.load(f, Loader=yaml.SafeLoader)
-
+    # print("config: ", config['model'])
     model = HydraModel(**config["model"])
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -106,7 +106,7 @@ def load_preprocess_example():
     )
 
     # TODO: replace once the new global config is implemented
-    new_mol_config = GeneralMolecularGraphConfigs(
+    new_mol_config = MolecularGraphConfigs(
         use_pbc=molecular_graph_cfg.use_pbc,
         use_pbc_single=molecular_graph_cfg.use_pbc_single,
         otf_graph=molecular_graph_cfg.otf_graph,

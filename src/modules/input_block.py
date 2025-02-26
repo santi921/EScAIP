@@ -5,7 +5,6 @@ from ..configs import (
     GraphNeuralNetworksConfigs,
     MolecularGraphConfigs,
     RegularizationConfigs,
-    GeneralMolecularGraphConfigs,
 )
 from ..custom_types import GraphAttentionData, GeneralGraphAttentionData
 from .base_block import BaseGraphNeuralNetworkLayer, GeneralBaseGraphNeuralNetworkLayer
@@ -45,7 +44,7 @@ class GeneralInputBlock(nn.Module):
     def __init__(
         self,
         global_cfg: GlobalConfigs,
-        molecular_graph_cfg: GeneralMolecularGraphConfigs,
+        molecular_graph_cfg: MolecularGraphConfigs,
         gnn_cfg: GraphNeuralNetworksConfigs,
         reg_cfg: RegularizationConfigs,
     ):
@@ -110,7 +109,7 @@ class GeneralInputLayer(GeneralBaseGraphNeuralNetworkLayer):
     def __init__(
         self,
         global_cfg: GlobalConfigs,
-        molecular_graph_cfg: GeneralMolecularGraphConfigs,
+        molecular_graph_cfg: MolecularGraphConfigs,
         gnn_cfg: GraphNeuralNetworksConfigs,
         reg_cfg: RegularizationConfigs,
     ):

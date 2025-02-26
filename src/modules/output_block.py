@@ -63,6 +63,7 @@ class OutputLayer(nn.Module):
         super().__init__()
 
         self.output_type = output_type
+
         output_type_dict = {
             "Vector": 3,
             "TwoComp": 2,
@@ -81,15 +82,57 @@ class OutputLayer(nn.Module):
             bias=True,
         )
 
-        # normalization
-        # self.norm = get_normalization_layer(reg_cfg.normalization, is_graph=False)(
-        #     global_cfg.hidden_size
-        # )
-
         # final output layer
         self.final_output = get_linear(
             in_features=global_cfg.hidden_size,
             out_features=output_type_dict[output_type],
+            activation=None,
+        )
+
+    def forward(self, features: torch.Tensor) -> torch.Tensor:
+        """
+        features: features from the backbone
+        Shape ([num_nodes, hidden_size] or [num_nodes, max_neighbor, hidden_size])
+        """
+        # mlp
+        features = self.ffn(features)
+
+        # final output layer
+        return self.final_output(features)
+
+
+class CouplingOutputLayer(nn.Module):
+    """
+    Get the final prediction from the readouts (force or energy)
+    """
+
+    def __init__(
+        self,
+        global_cfg: GlobalConfigs,
+        reg_cfg: RegularizationConfigs,
+    ):
+        super().__init__()
+        # mlp
+        self.ffn = nn.Sequential(
+            get_linear(
+                in_features=1,
+                out_features=global_cfg.j_coupling_hidden_dim,
+                activation=global_cfg.activation,
+                bias=True,
+                dropout=reg_cfg.mlp_dropout,
+            ),
+            get_linear(
+                out_features=global_cfg.j_coupling_hidden_dim,
+                bias=True,
+                activation=None,
+                dropout=reg_cfg.mlp_dropout,
+            ),
+        )
+
+        # final output layer
+        self.final_output = get_linear(
+            in_features=global_cfg.j_coupling_hidden_dim,
+            out_features=1,
             activation=None,
         )
 

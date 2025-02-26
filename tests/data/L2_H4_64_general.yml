@@ -48,7 +48,7 @@ model:
     num_layers: 2
     output_hidden_layer_multiplier: 2
     readout_hidden_layer_multiplier: 2
-    constrain_charge: false
+    constrain_charge_spin: false
 
     # Feed Forward Network Configs
     ffn_bias: true

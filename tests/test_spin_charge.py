@@ -9,6 +9,7 @@ from tests.test_utils import (
 from src.utils.graph_utils import (
     get_potential,
     potential_full_from_pos,
+    heisenberg_potential_full_from_edge_inds,
 )
 
 
@@ -57,6 +58,7 @@ class TestSpinCharge:
         q[0] = 1.0
         batch_ind = self.batch.batch
         pos = self.batch.pos
+
         potential = potential_full_from_pos(
             batch=batch_ind,
             pos=pos,
@@ -73,3 +75,34 @@ class TestSpinCharge:
             float(potential[1]), 0.0477, atol=1e-3
         ), f"Expected 0.0477, got {potential[1]}"
         assert potential[-1] == 0.0, f"Expected 0.0, got {potential[-1]}"
+
+    def test_spin(self):
+        q = torch.tensor([1.0, -1.0, 1.0], device=self.batch.pos.device)
+        edge_index = torch.tensor([[0, 1], [1, 0]], device=self.batch.pos.device)
+        pos = self.batch.pos
+
+        layers = [torch.nn.Linear(in_features=1, out_features=20)]
+        layers += [torch.nn.Linear(in_features=20, out_features=1)]
+        nn_charge = torch.nn.Sequential(*layers)
+        # set nn_charge to all ones
+        nn_charge[0].weight.data.fill_(1)
+        nn_charge[0].bias.data.fill_(0)
+        nn_charge[1].weight.data.fill_(1)
+        nn_charge[1].bias.data.fill_(0)
+
+        nn_charge.to(self.batch.pos.device)
+
+        energy_spin_raw = heisenberg_potential_full_from_edge_inds(
+            pos=pos,
+            edge_index=edge_index,
+            q=q,
+            nn=nn_charge,
+        )
+
+        # print(energy_spin_raw)
+
+        # assert all are zero expect for the first
+        benchmark = torch.tensor([-27.9526], device=self.batch.pos.device)
+        assert torch.allclose(
+            input=energy_spin_raw, other=benchmark
+        ), f"Expected -27.9526, got {energy_spin_raw[0]}"

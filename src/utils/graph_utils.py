@@ -535,7 +535,7 @@ def potential_full_from_edge_inds(
         results = torch.zeros(padding_dim, device=q.device)
     else:
         results = torch.zeros(list_source.max() + 1, device=q.device)
-    potential_dict = {}
+
     # get potential energy for each atom
     for ind, mask in dict_mask_lr.items():
         interactions_now = dict_ind_neighbors_interactions[ind]
@@ -543,7 +543,57 @@ def potential_full_from_edge_inds(
         pot = get_potential(
             q, convergence_func, edge_dist_transformed, mask, interactions_now
         )
-        potential_dict[ind] = pot
         results[ind] = pot
+
+    return results
+
+
+def heisenberg_potential_full_from_edge_inds(
+    pos: torch.Tensor,  # keep
+    edge_index: torch.Tensor,  # keep
+    q: torch.Tensor,
+    nn: torch.nn.Module,
+    padding_dim: torch.Tensor = None,
+):
+    """
+    Get the potential energy for each atom in the batch.
+    Takes:
+        pos: position matrix of shape (n_atoms, 3)
+        edge_index: edge index of shape (2, n_edges)
+        q: charge vector of shape (n_atoms, 1)
+        nn: neural network to calculate the coupling term
+    Returns:
+        potential_dict: dictionary of potential energy for each atom
+    """
+    # batch uses pos, batch. That's it
+    j, i = edge_index
+    distance_vec = pos[j] - pos[i]
+    edge_dist = distance_vec.norm(dim=-1)
+
+    list_target = edge_index[1]
+    list_source = edge_index[0]
+
+    # get list of neighbors for each node
+    dict_mask_lr = {}
+    dict_ind_neighbors_interactions = {}
+
+    for i in list_source.unique():
+        dict_mask_lr[i] = list_target[list_source == i]
+        dict_ind_neighbors_interactions[i] = torch.where(list_source == i)[0]
+
+    # create vector of potentials from ind 0 to n_atoms
+    if padding_dim is not None:
+        results = torch.zeros(padding_dim, device=q.device)
+    else:
+        results = torch.zeros(list_source.max() + 1, device=q.device)
+
+    for ind, mask in dict_mask_lr.items():
+        q_1 = q[ind]
+        q_neighbors = q[mask]
+        distance_now = edge_dist[dict_ind_neighbors_interactions[ind]]
+        coupling = torch.tensor(
+            [nn(i.unsqueeze(0)) for i in distance_now], device=distance_vec.device
+        )[:, None]
+        results[ind] = torch.sum(q_1 * q_neighbors * coupling)
 
     return results

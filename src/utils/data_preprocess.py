@@ -14,7 +14,6 @@ from ..custom_types import GraphAttentionData, GeneralGraphAttentionData
 from ..configs import (
     GlobalConfigs,
     MolecularGraphConfigs,
-    GeneralMolecularGraphConfigs,
     GraphNeuralNetworksConfigs,
 )
 from .graph_utils import (
@@ -172,7 +171,7 @@ def data_preprocess_spin_charge(
     generate_graph_fn_lr: callable,
     global_cfg: GlobalConfigs,
     gnn_cfg: GraphNeuralNetworksConfigs,
-    molecular_graph_cfg: GeneralMolecularGraphConfigs,
+    molecular_graph_cfg: MolecularGraphConfigs,
 ) -> GeneralGraphAttentionData:
     # atomic numbers
     atomic_numbers = data.atomic_numbers.long()
@@ -256,7 +255,7 @@ def data_preprocess_spin_charge(
         #    "data",
         # )
         # print("spin", spin, "n_nodes_graphs", n_nodes_graphs)
-
+        # print("spin", str(spin))
         spin_expand = one_hot_encode(
             spin,
             n_nodes_graphs,

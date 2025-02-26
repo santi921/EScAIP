@@ -5,7 +5,6 @@ from ..configs import (
     GlobalConfigs,
     GraphNeuralNetworksConfigs,
     MolecularGraphConfigs,
-    GeneralMolecularGraphConfigs,
     RegularizationConfigs,
 )
 from ..utils.graph_utils import map_sender_receiver_feature
@@ -154,7 +153,7 @@ class GeneralBaseGraphNeuralNetworkLayer(nn.Module):
     def __init__(
         self,
         global_cfg: GlobalConfigs,
-        molecular_graph_cfg: GeneralMolecularGraphConfigs,
+        molecular_graph_cfg: MolecularGraphConfigs,
         gnn_cfg: GraphNeuralNetworksConfigs,
         reg_cfg: RegularizationConfigs,
     ):

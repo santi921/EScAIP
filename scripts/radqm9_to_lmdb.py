@@ -1,3 +1,4 @@
+import argparse
 import lmdb
 from io import StringIO
 from ase.io import read
@@ -185,10 +186,17 @@ def stream_xyz(file_xyz):
                 lines_temp.append(line)
 
 
-def convert_to_lmdb():
-    dataset_name = "radqm9_test"
-    ref_file = "/home/santiagovargas/dev/aimnet2/data/xyz/radqm9_65_10_25_sp_vacuum_full_data_20240807_val.xyz"
-    db_path = "/home/santiagovargas/dev/EScAIP/dev/scripts/data/radqm9_val_full/"
+def convert_to_lmdb(
+    dataset_name="radqm9_test",
+    ref_file="/home/santiagovargas/dev/aimnet2/data/xyz/radqm9_65_10_25_sp_vacuum_full_data_20240807_val.xyz",
+    db_path="/home/santiagovargas/dev/EScAIP/dev/scripts/data/radqm9_val_full/",
+    split_tf=True,
+):
+    # split_tf = True
+    # dataset_name = "radqm9_test"
+    # ref_file = "/home/santiagovargas/dev/aimnet2/data/xyz/radqm9_65_10_25_sp_vacuum_full_data_20240807_val.xyz"
+    # db_path = "/home/santiagovargas/dev/EScAIP/dev/scripts/data/radqm9_val_full/"
+
     save_path = Path(db_path) / dataset_name
     save_path.mkdir(parents=True, exist_ok=True)
 
@@ -212,12 +220,12 @@ def convert_to_lmdb():
         atomic_numbers = atomic_numbers.astype(np.int64)
 
         info_dict = atoms.info
-
-        spin = info_dict["spin"]
-        charge = info_dict["charge"]
-        total_energy = info_dict["relative_energy"]
+        # print(info_dict)
+        spin = int(info_dict["spin"])
+        charge = int(info_dict["charge"])
+        total_energy = float(info_dict["relative_energy"])
         # ref_energy = info_dict["REF_energy"]
-        mol_id = info_dict["mol_id"]
+        mol_id = str(info_dict["mol_id"])
         # position_type = info_dict["position_type"]
         dipole = info_dict["dipole_moment"]
         resp_dipole = info_dict["resp_dipole_moment"]
@@ -230,7 +238,7 @@ def convert_to_lmdb():
 
         dataset_size += 1
         dataset_size_atoms += n_points
-
+        # try:
         energy_list.append(total_energy)
         force_list.append(forces)
         spin_list.append(spin)
@@ -242,9 +250,13 @@ def convert_to_lmdb():
         resp_partial_charges_list.append(resp_partial_charges)
         mulliken_partial_charges_list.append(mulliken_partial_charges)
         mol_id_list.append(mol_id)
+        # except:
+        #    # throw error
 
         # if dataset_size == 100:
         #    break
+    print("spin set", set(spin_list))
+    print("charge set", set(charge_list))
 
     energy_list = np.array(energy_list).reshape(
         -1, 1
@@ -255,48 +267,125 @@ def convert_to_lmdb():
 
     # n_size = dataset_size
     print(f"dataset size: {dataset_size}")
-    train_val_index = np.linspace(0, dataset_size - 1, dataset_size, dtype=int)
-    # print(train_val_index)
-    test = np.setdiff1d(np.arange(dataset_size), train_val_index)
-    np.random.shuffle(test)
 
-    test = test.tolist()
-    train, val = train_test_split(
-        train_val_index, train_size=0.95, test_size=0.05, random_state=42
-    )
+    if split_tf:
+        train_val_index = np.linspace(0, dataset_size - 1, dataset_size, dtype=int)
+        # print(train_val_index)
+        test = np.setdiff1d(np.arange(dataset_size), train_val_index)
+        np.random.shuffle(test)
 
-    ranges = [train, val, test]
+        test = test.tolist()
+        train, val = train_test_split(
+            train_val_index, train_size=0.95, test_size=0.05, random_state=42
+        )
 
-    # print(train)
-    # print(force_list)
+        ranges = [train, val, test]
 
-    e_train = energy_list[train]
-    f_train = [force_list[i] for i in train]
+        e_train = energy_list[train]
+        f_train = [force_list[i] for i in train]
+        spin_train = [spin_list[i] for i in train]
+        charge_train = [charge_list[i] for i in train]
 
-    norm_stats = {
-        "e_mean": e_train.mean(),
-        "e_std": e_train.std(),
-        "f_mean": np.concatenate(f_train).mean(),
-        "f_std": np.concatenate(f_train).std(),
-    }
-    print(norm_stats)
-    np.save(save_path / "metadata", norm_stats)
+        norm_stats = {
+            "e_mean": e_train.mean(),
+            "e_std": e_train.std(),
+            "f_mean": np.concatenate(f_train).mean(),
+            "f_std": np.concatenate(f_train).std(),
+            "spin_mean": np.array(spin_train).mean(),
+            "spin_std": np.array(spin_train).std(),
+            "charge_mean": np.array(charge_train).mean(),
+            "charge_std": np.array(charge_train).std(),
+        }
+        print(norm_stats)
 
-    a2g = AtomsToGraphs(
-        max_neigh=1000,
-        radius=6,
-        r_energy=True,
-        r_forces=True,
-        r_distances=False,
-        r_edges=False,
-        device="cpu",
-    )
+        np.save(save_path / "metadata", norm_stats)
+        # save identical to npz
+        np.savez(save_path / "data.npz", norm_stats)
 
-    for spidx, split in enumerate(["train", "val", "test"]):
-        print(f"processing split {split}.")
-        if len(ranges[spidx]) == 0:
-            continue
-        save_path = Path(db_path) / dataset_name / split
+        a2g = AtomsToGraphs(
+            max_neigh=1000,
+            radius=6,
+            r_energy=True,
+            r_forces=True,
+            r_distances=False,
+            r_edges=False,
+            device="cpu",
+        )
+
+        for spidx, split in enumerate(["train", "val", "test"]):
+            print(f"processing split {split}.")
+            if len(ranges[spidx]) == 0:
+                continue
+            save_path = Path(db_path) / dataset_name / split
+            save_path.mkdir(parents=True, exist_ok=True)
+
+            db = lmdb.open(
+                str(save_path / "data.lmdb"),
+                map_size=1099511627776 * 2,
+                subdir=False,
+                meminit=False,
+                map_async=True,
+            )
+
+            for i, idx in enumerate(tqdm(ranges[spidx])):
+                natoms = np.array([positions_list[idx].shape[0]] * 1, dtype=np.int64)
+                # print("converting")
+                # print(natoms, positions_list[idx].shape, atomic_number_list[idx].shape, force_list[idx].shape)
+
+                data = a2g.convert(
+                    natoms,
+                    positions_list[idx],
+                    atomic_number_list[idx],
+                    lengths,
+                    angles,
+                    energy_list[idx],
+                    force_list[idx],
+                    charge=charge_list[idx],
+                    spin=spin_list[idx],
+                    mol_id=mol_id_list[idx],
+                    # partial_charges=resp_partial_charges_list[idx],
+                    # partial_spin=mulliken_partial_charges_list[idx],
+                    dipole=dipole_list[idx],
+                    resp_dipole=resp_dipole_list[idx],
+                )
+                # print("converted")
+                data.sid = 0
+                data.fid = idx
+
+                txn = db.begin(write=True)
+                txn.put(f"{i}".encode("ascii"), pkl.dumps(data, protocol=-1))
+                txn.commit()
+
+            # Save count of objects in lmdb.
+            txn = db.begin(write=True)
+            txn.put("length".encode("ascii"), pkl.dumps(i, protocol=-1))
+            txn.commit()
+
+            db.sync()
+            db.close()
+
+    else:
+        norm_stats = {
+            "e_mean": float(energy_list.mean()),
+            "e_std": float(energy_list.std()),
+            "f_mean": np.concatenate(force_list).mean(),
+            "f_std": np.concatenate(force_list).std(),
+        }
+        print(norm_stats)
+        np.save(save_path / "metadata", norm_stats)
+        np.savez(save_path / "data.npz", norm_stats)
+
+        a2g = AtomsToGraphs(
+            max_neigh=1000,
+            radius=6,
+            r_energy=True,
+            r_forces=True,
+            r_distances=False,
+            r_edges=False,
+            device="cpu",
+        )
+
+        save_path = Path(db_path) / dataset_name
         save_path.mkdir(parents=True, exist_ok=True)
 
         db = lmdb.open(
@@ -307,30 +396,26 @@ def convert_to_lmdb():
             map_async=True,
         )
 
-        for i, idx in enumerate(tqdm(ranges[spidx])):
-            natoms = np.array([positions_list[idx].shape[0]] * 1, dtype=np.int64)
-            # print("converting")
-            # print(natoms, positions_list[idx].shape, atomic_number_list[idx].shape, force_list[idx].shape)
-
+        for i in tqdm(range(dataset_size)):
+            natoms = np.array([positions_list[i].shape[0]] * 1, dtype=np.int64)
             data = a2g.convert(
                 natoms,
-                positions_list[idx],
-                atomic_number_list[idx],
+                positions_list[i],
+                atomic_number_list[i],
                 lengths,
                 angles,
-                energy_list[idx],
-                force_list[idx],
-                charge=charge_list[idx],
-                spin=spin_list[idx],
-                mol_id=mol_id_list[idx],
-                # partial_charges=resp_partial_charges_list[idx],
-                # partial_spin=mulliken_partial_charges_list[idx],
-                dipole=dipole_list[idx],
-                resp_dipole=resp_dipole_list[idx],
+                energy_list[i],
+                force_list[i],
+                charge=charge_list[i],
+                spin=spin_list[i],
+                mol_id=mol_id_list[i],
+                # partial_charges=resp_partial_charges_list[i],
+                # partial_spin=mulliken_partial_charges_list[i],
+                dipole=dipole_list[i],
+                resp_dipole=resp_dipole_list[i],
             )
-            # print("converted")
             data.sid = 0
-            data.fid = idx
+            data.fid = i
 
             txn = db.begin(write=True)
             txn.put(f"{i}".encode("ascii"), pkl.dumps(data, protocol=-1))
@@ -346,4 +431,24 @@ def convert_to_lmdb():
 
 
 if __name__ == "__main__":
-    convert_to_lmdb()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--dataset_name", type=str, default="radqm9_test")
+    parser.add_argument(
+        "--ref_file",
+        type=str,
+        default="/home/santiagovargas/dev/aimnet2/data/xyz/radqm9_65_10_25_sp_vacuum_full_data_20240807_val.xyz",
+    )
+    parser.add_argument(
+        "--db_path",
+        type=str,
+        default="/home/santiagovargas/dev/EScAIP/dev/scripts/data/radqm9_val_full/",
+    )
+    parser.add_argument("--split_tf", type=bool, default=True)
+    args = parser.parse_args()
+
+    convert_to_lmdb(
+        str(args.dataset_name),
+        str(args.ref_file),
+        str(args.db_path),
+        bool(args.split_tf),
+    )
