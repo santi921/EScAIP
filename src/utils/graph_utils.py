@@ -554,6 +554,9 @@ def heisenberg_potential_full_from_edge_inds(
     q: torch.Tensor,
     nn: torch.nn.Module,
     padding_dim: torch.Tensor = None,
+    epsilon: float = 1e-6,
+    twopi: float = 2.0 * np.pi,
+    sigma: float = 1.0,
 ):
     """
     Get the potential energy for each atom in the batch.
@@ -562,13 +565,17 @@ def heisenberg_potential_full_from_edge_inds(
         edge_index: edge index of shape (2, n_edges)
         q: charge vector of shape (n_atoms, 1)
         nn: neural network to calculate the coupling term
+        sigma: sigma parameter for the error function
+        epsilon: epsilon parameter for the error function
     Returns:
         potential_dict: dictionary of potential energy for each atom
     """
     # batch uses pos, batch. That's it
     j, i = edge_index
     distance_vec = pos[j] - pos[i]
+
     edge_dist = distance_vec.norm(dim=-1)
+    edge_dist.requires_grad_(True)
 
     list_target = edge_index[1]
     list_source = edge_index[0]
@@ -581,6 +588,9 @@ def heisenberg_potential_full_from_edge_inds(
         dict_mask_lr[i] = list_target[list_source == i]
         dict_ind_neighbors_interactions[i] = torch.where(list_source == i)[0]
 
+    # edge_dist_transformed = (1.0 / (edge_dist + epsilon)) / twopi / 2.0
+    # convergence_func = torch.special.erf(edge_dist / sigma / (2.0**0.5))
+
     # create vector of potentials from ind 0 to n_atoms
     if padding_dim is not None:
         results = torch.zeros(padding_dim, device=q.device)
@@ -591,9 +601,8 @@ def heisenberg_potential_full_from_edge_inds(
         q_1 = q[ind]
         q_neighbors = q[mask]
         distance_now = edge_dist[dict_ind_neighbors_interactions[ind]]
-        coupling = torch.tensor(
-            [nn(i.unsqueeze(0)) for i in distance_now], device=distance_vec.device
-        )[:, None]
+
+        coupling = nn(distance_now.reshape(-1, 1))
         results[ind] = torch.sum(q_1 * q_neighbors * coupling)
 
     return results

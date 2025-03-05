@@ -443,7 +443,7 @@ class EScAIPEnergyHead(EScAIPHeadBase):
     def compiled_forward(self, node_features, data: GraphAttentionData):
         energy_output = self.energy_layer(node_features)
 
-        # the following not compatible with torch.compile (grpah break)
+        # the following not compatible with torch.compile (graph break)
         # energy_output = torch_scatter.scatter(energy_output, node_batch, dim=0, reduce="sum")
         energy_output = compilable_scatter(
             src=energy_output,
@@ -478,16 +478,14 @@ class EScAIPDirectForceEnergyLRHead(EScAIPHeadBase):
             charge_latent_dim = "TwoComp"
 
             if self.gnn_cfg.heisenberg_tf:
-                self.j_coupling_nn = OutputLayer(
-                    global_cfg=self.global_cfg,
-                    gnn_cfg=self.gnn_cfg,
-                    reg_cfg=self.reg_cfg,
-                    output_type="Scalar",
+                self.j_coupling_nn = CouplingOutputLayer(
+                    global_cfg=self.global_cfg, reg_cfg=self.reg_cfg
                 )
+
         else:
             charge_latent_dim = "Scalar"
 
-        self.q_output_lr = CouplingOutputLayer(
+        self.q_output_lr = OutputLayer(
             global_cfg=self.global_cfg,
             gnn_cfg=self.gnn_cfg,
             reg_cfg=self.reg_cfg,
@@ -536,6 +534,7 @@ class EScAIPDirectForceEnergyLRHead(EScAIPHeadBase):
 
     def get_charges(self, node_features, data: GraphAttentionData, unpad: bool = False):
         q_pred = self.q_output_lr(node_features)
+        # print("charge shape", q_pred.shape)
         # if two component, square each component to make positive
         # if self.gnn_cfg.two_component_latent_charge:
         #    q_pred = q_pred ** 2
@@ -581,7 +580,7 @@ class EScAIPDirectForceEnergyLRHead(EScAIPHeadBase):
                 pos=data.pos,
                 edge_index=data.edge_index_lr,
                 q=charges_padded,
-                nn=self.coupling_nn,
+                nn=self.j_coupling_nn,
                 padding_dim=data.node_padding_mask.shape[0],
             )
 
@@ -593,10 +592,19 @@ class EScAIPDirectForceEnergyLRHead(EScAIPHeadBase):
                 reduce="sum",
             )
 
+            if return_charges:
+                spin_charges_scattered = compilable_scatter(
+                    src=charges_padded,
+                    index=data.node_batch,
+                    dim_size=data.graph_padding_mask.shape[0],
+                    dim=0,
+                    reduce="sum",
+                )
+                ret_dict["spin_charges"] = spin_charges_scattered
+
             ret_dict["energy_spin"] = spin_energy_scattered
 
         if self.gnn_cfg.two_component_latent_charge:
-            ret_dict["spin_charges"] = charges_padded
             charges_padded = charges_padded.sum(dim=1)
         else:
             charges_padded = charges_padded
@@ -661,9 +669,12 @@ class EScAIPDirectForceEnergyLRHead(EScAIPHeadBase):
             "forces_sr": forces_output,
         }
 
+        if self.gnn_cfg.heisenberg_tf:
+            ret_dict["energy_spin"] = energy_lr_dict["energy_spin"]
+
         if self.ret_charges:
             # check if this is correct for spin charges
-            ret_dict["charges"] = energy_lr_dict["charges"]  # .view(-1)
+            ret_dict["charges"] = energy_lr_dict["charges"]
             if self.gnn_cfg.two_component_latent_charge:
                 ret_dict["spin_charges"] = energy_lr_dict["spin_charges"]
 
@@ -686,10 +697,18 @@ class EScAIPDirectForceEnergyLRHead(EScAIPHeadBase):
 
         if self.constrain_charge:
             unpad_dict["charges"] = res_dict_raw["charges"]
+
         if self.constrain_spin:
             unpad_dict["spin_charges"] = res_dict_raw["spin_charges"]
+
         if self.gnn_cfg.heisenberg_tf:
             unpad_dict["energy_spin"] = res_dict_raw["energy_spin"]
+
+        # print("spin charges", res_dict_raw["spin_charges"].shape)
+        # print("charges", res_dict_raw["charges"].shape)
+        # print("forces", res_dict_raw["forces_sr"].shape)
+        # print("energy", res_dict_raw["energy_lr"].shape)
+        # print("energy", res_dict_raw["energy_sr"].shape)
 
         res_unpad = unpad_results(
             results=unpad_dict,
@@ -722,11 +741,18 @@ class EScAIPDirectForceEnergyLRHead(EScAIPHeadBase):
                 ret_dict["charge"] = res_unpad["charges"]
 
         if self.constrain_spin:
+            # print("spin charges unpadded ", res_unpad["spin_charges"].shape)
+            # print("charges unpadded ", res_unpad["charges"].shape)
+            # print("forces unpadded ", res_unpad["forces_sr"].shape)
+            # print("energy unpadded ", res_unpad["energy_sr"].shape)
+
             alpha_charge = res_unpad["spin_charges"][:, 0]
             beta_charge = res_unpad["spin_charges"][:, 1]
             spin = alpha_charge - beta_charge
             ret_dict["spin"] = spin
 
+        # print(ret_dict)
+        # print(ret_dict.keys())
         return ret_dict
 
 
@@ -835,6 +861,8 @@ class EScAIPGradientForceEnergyLRHead(EScAIPHeadBase):
         if self.gnn_cfg.two_component_latent_charge:
             ret_dict["spin_charges"] = charges_padded
             charges_padded = charges_padded.abs().sum(dim=1)
+            # print("charges_padded", charges_padded.shape)
+
         else:
             charges_padded = charges_padded
 

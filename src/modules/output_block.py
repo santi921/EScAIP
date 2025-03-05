@@ -122,6 +122,7 @@ class CouplingOutputLayer(nn.Module):
                 dropout=reg_cfg.mlp_dropout,
             ),
             get_linear(
+                in_features=global_cfg.j_coupling_hidden_dim,
                 out_features=global_cfg.j_coupling_hidden_dim,
                 bias=True,
                 activation=None,
@@ -136,13 +137,12 @@ class CouplingOutputLayer(nn.Module):
             activation=None,
         )
 
-    def forward(self, features: torch.Tensor) -> torch.Tensor:
+    def forward(self, distance: torch.Tensor) -> torch.Tensor:
         """
-        features: features from the backbone
-        Shape ([num_nodes, hidden_size] or [num_nodes, max_neighbor, hidden_size])
+        distance: distance between the atoms
         """
         # mlp
-        features = self.ffn(features)
+        features = self.ffn(distance)
 
         # final output layer
         return self.final_output(features)
