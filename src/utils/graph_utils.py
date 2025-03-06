@@ -61,6 +61,7 @@ def convert_neighbor_list(edge_index: torch.Tensor, max_neighbors: int, num_node
     )
 
     # Scatter the neighbors
+
     neighbor_list.scatter_(0, index_mapping, src)
     mask.scatter_(
         0,
@@ -539,7 +540,6 @@ def potential_full_from_edge_inds(
     # get potential energy for each atom
     for ind, mask in dict_mask_lr.items():
         interactions_now = dict_ind_neighbors_interactions[ind]
-        # get_potential(q, convergence_func, edge_dist_transformed, mask, interactions_now)
         pot = get_potential(
             q, convergence_func, edge_dist_transformed, mask, interactions_now
         )
@@ -554,8 +554,6 @@ def heisenberg_potential_full_from_edge_inds(
     q: torch.Tensor,
     nn: torch.nn.Module,
     padding_dim: torch.Tensor = None,
-    epsilon: float = 1e-6,
-    twopi: float = 2.0 * np.pi,
     sigma: float = 1.0,
 ):
     """
@@ -574,7 +572,7 @@ def heisenberg_potential_full_from_edge_inds(
     j, i = edge_index
     distance_vec = pos[j] - pos[i]
 
-    edge_dist = distance_vec.norm(dim=-1)
+    edge_dist = distance_vec.norm(dim=-1).reshape(-1, 1)
     edge_dist.requires_grad_(True)
 
     list_target = edge_index[1]
@@ -588,8 +586,7 @@ def heisenberg_potential_full_from_edge_inds(
         dict_mask_lr[i] = list_target[list_source == i]
         dict_ind_neighbors_interactions[i] = torch.where(list_source == i)[0]
 
-    # edge_dist_transformed = (1.0 / (edge_dist + epsilon)) / twopi / 2.0
-    # convergence_func = torch.special.erf(edge_dist / sigma / (2.0**0.5))
+    convergence_func = torch.special.erf(edge_dist / sigma / (2.0**0.5)).reshape(-1, 1)
 
     # create vector of potentials from ind 0 to n_atoms
     if padding_dim is not None:
@@ -601,8 +598,14 @@ def heisenberg_potential_full_from_edge_inds(
         q_1 = q[ind]
         q_neighbors = q[mask]
         distance_now = edge_dist[dict_ind_neighbors_interactions[ind]]
+        convergence_func_now = convergence_func[dict_ind_neighbors_interactions[ind]]
+        # coupling = nn(distance_now.reshape(-1, 1))
+        coupling = nn(distance_now)
 
-        coupling = nn(distance_now.reshape(-1, 1))
-        results[ind] = torch.sum(q_1 * q_neighbors * coupling)
+        # print("convergence_func_now", convergence_func_now.shape)
+        # print("coupling", coupling.shape)
+        # print("q_1", q_1.shape)
+        # print("q_neighbors", q_neighbors.shape)
+        results[ind] = torch.sum(q_1 * q_neighbors * coupling * convergence_func_now)
 
     return results
