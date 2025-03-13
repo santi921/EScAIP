@@ -1,15 +1,17 @@
 from .EScAIP import (
     EScAIPBackbone,
+    GeneralEScAIPBackbone,
     EScAIPDirectForceHead,
     EScAIPEnergyHead,
-    EScAIPDirectForceEnergyLRHead,
     EScAIPGradientEnergyForceHead,
+    EScAIPDirectForceEnergyLRHead,
     EScAIPGradientForceEnergyLRHead,
 )
 
 __all__ = [
     "EScAIPBackbone",
     "EScAIPDirectForceHead",
+    "GeneralEScAIPBackbone",
     "EScAIPEnergyHead",
     "EScAIPDirectForceEnergyLRHead",
     "EScAIPGradientEnergyForceHead",
