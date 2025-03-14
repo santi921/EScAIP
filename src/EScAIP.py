@@ -180,7 +180,7 @@ class EScAIPBackbone(nn.Module, GraphModelMixin):
         return no_weight_decay(self)
 
 
-@registry.register_model("GeneralEScAIPBackbone")
+@registry.register_model("General_EScAIP_backbone")
 class GeneralEScAIPBackbone(nn.Module, GraphModelMixin):
     """
     Efficiently Scaled Attention Interactomic Potential (EScAIP) backbone model.

@@ -179,7 +179,7 @@ def load_general_model_configs():
             "pass_through_head_outputs": True,
             "otf_graph": True,
             "backbone": {
-                "model": "src.EScAIP.GeneralEScAIPBackbone",
+                "model": "General_EScAIP_backbone",
                 "activation": "gelu",
                 "direct_force": True,
                 "hidden_size": 512,
@@ -217,8 +217,8 @@ def load_general_model_configs():
                 "use_partial_spin": False,
             },
             "heads": {
-                "forces": {"module": "src.EScAIP.EScAIPDirectForceHead"},
-                "energy": {"module": "src.EScAIP.EScAIPEnergyHead"},
+                "forces": {"module": "EScAIP_direct_force_head"},
+                "energy": {"module": "EScAIP_energy_head"},
             },
         },
         "optim": {

@@ -4,7 +4,7 @@ model:
   otf_graph: True
 
   backbone:
-    model: src.EScAIP.GeneralEScAIPBackbone
+    model: General_EScAIP_backbone
 
     # Global Configs
     activation: gelu
@@ -67,9 +67,9 @@ model:
 
   heads:
     forces:
-      module: src.EScAIP.EScAIPDirectForceHead
+      module: EScAIP_direct_force_head
     energy:
-      module: src.EScAIP.EScAIPEnergyHead
+      module: EScAIP_energy_head
     stress:
-      module: src.EScAIP.EScAIPRank2Head
+      module: EScAIP_rank2_head
       output_name: stress

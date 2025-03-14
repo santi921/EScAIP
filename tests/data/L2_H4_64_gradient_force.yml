@@ -4,7 +4,7 @@ model:
   otf_graph: True
 
   backbone:
-    model: src.EScAIP.EScAIPBackbone
+    model: EScAIP_backbone
 
     # Global Configs
     activation: gelu
@@ -61,7 +61,8 @@ model:
 
   heads:
     grad_energy_forces:
-      module: src.EScAIP.EScAIPGradientEnergyForceHead
+      module: EScAIP_grad_energy_force_head
+
     stress:
-      module: src.EScAIP.EScAIPRank2Head
+      module: EScAIP_rank2_head
       output_name: stress
