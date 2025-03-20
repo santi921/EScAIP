@@ -616,7 +616,7 @@ class EScAIPDirectForceEnergyLRHead(EScAIPHeadBase):
                 # sum energies from alpha and beta
                 ret_dict["spin_charges"] = spin_charges_scattered
 
-            ret_dict["energy_spin"] = spin_energy_scattered.sum(dim=1)
+            ret_dict["energy_spin"] = spin_energy_scattered  # .sum(dim=1)
 
         if self.gnn_cfg.two_component_latent_charge:
             charges_padded = charges_padded.sum(dim=1)

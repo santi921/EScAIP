@@ -504,7 +504,9 @@ def heisenberg_potential_full_from_edge_inds(
     pairwise_potential = q_source * q_target * coupling * convergence_func
     # print("pairwise potential: ", pairwise_potential.shape)
     # Aggregate results for each node
-    results = scatter(pairwise_potential, i, dim=0, dim_size=q.size(0), reduce="sum")
+    results = scatter(
+        pairwise_potential, i, dim=0, dim_size=q.size(0), reduce="sum"
+    ).sum(dim=1)
 
     # Handle padding if specified
     # if padding_dim is not None:
