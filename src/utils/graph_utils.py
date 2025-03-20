@@ -481,7 +481,7 @@ def heisenberg_potential_full_from_edge_inds(
     Takes:
         pos: position matrix of shape (n_atoms, 3)
         edge_index: edge index of shape (2, n_edges)
-        q: charge vector of shape (n_atoms, 1)
+        q: charge vector of shape (n_atoms, 2)
         nn: neural network to calculate the coupling term
         sigma: sigma parameter for the error function
         epsilon: epsilon parameter for the error function
@@ -491,13 +491,28 @@ def heisenberg_potential_full_from_edge_inds(
     # batch uses pos, batch. That's it
     j, i = edge_index
     distance_vec = pos[j] - pos[i]
-
     edge_dist = distance_vec.norm(dim=-1).reshape(-1, 1)
     edge_dist.requires_grad_(True)
 
-    list_target = edge_index[1]
-    list_source = edge_index[0]
+    # list_target = edge_index[1]
+    # list_source = edge_index[0]
+    convergence_func = torch.special.erf(edge_dist / sigma / (2.0**0.5)).reshape(-1, 1)
+    coupling = nn(edge_dist)
 
+    q_source = q[i]
+    q_target = q[j]
+    pairwise_potential = q_source * q_target * coupling * convergence_func
+    # print("pairwise potential: ", pairwise_potential.shape)
+    # Aggregate results for each node
+    results = scatter(pairwise_potential, i, dim=0, dim_size=q.size(0), reduce="sum")
+
+    # Handle padding if specified
+    # if padding_dim is not None:
+    #    padded_results = torch.zeros(padding_dim, device=q.device)
+    #    padded_results[: results.size(0)] = results
+    #    return padded_results
+
+    """ - method 1
     # get list of neighbors for each node
     dict_mask_lr = {}
     dict_ind_neighbors_interactions = {}
@@ -506,7 +521,6 @@ def heisenberg_potential_full_from_edge_inds(
         dict_mask_lr[i] = list_target[list_source == i]
         dict_ind_neighbors_interactions[i] = torch.where(list_source == i)[0]
 
-    convergence_func = torch.special.erf(edge_dist / sigma / (2.0**0.5)).reshape(-1, 1)
 
     # create vector of potentials from ind 0 to n_atoms
     if padding_dim is not None:
@@ -521,5 +535,5 @@ def heisenberg_potential_full_from_edge_inds(
         convergence_func_now = convergence_func[dict_ind_neighbors_interactions[ind]]
         coupling = nn(distance_now)
         results[ind] = torch.sum(q_1 * q_neighbors * coupling * convergence_func_now)
-
+    """
     return results

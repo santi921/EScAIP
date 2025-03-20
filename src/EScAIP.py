@@ -603,6 +603,7 @@ class EScAIPDirectForceEnergyLRHead(EScAIPHeadBase):
                 dim=0,
                 reduce="sum",
             )
+            # print("scattered: ", spin_energy_scattered.shape)
 
             if return_charges:
                 spin_charges_scattered = compilable_scatter(
@@ -611,10 +612,11 @@ class EScAIPDirectForceEnergyLRHead(EScAIPHeadBase):
                     dim_size=data.graph_padding_mask.shape[0],
                     dim=0,
                     reduce="sum",
-                )
+                ).sum(dim=1)
+                # sum energies from alpha and beta
                 ret_dict["spin_charges"] = spin_charges_scattered
 
-            ret_dict["energy_spin"] = spin_energy_scattered
+            ret_dict["energy_spin"] = spin_energy_scattered.sum(dim=1)
 
         if self.gnn_cfg.two_component_latent_charge:
             charges_padded = charges_padded.sum(dim=1)
@@ -747,11 +749,6 @@ class EScAIPDirectForceEnergyLRHead(EScAIPHeadBase):
                 ret_dict["charge"] = res_unpad["charges"]
 
         if self.constrain_spin:
-            # print("spin charges unpadded ", res_unpad["spin_charges"].shape)
-            # print("charges unpadded ", res_unpad["charges"].shape)
-            # print("forces unpadded ", res_unpad["forces_sr"].shape)
-            # print("energy unpadded ", res_unpad["energy_sr"].shape)
-
             alpha_charge = res_unpad["spin_charges"][:, 0]
             beta_charge = res_unpad["spin_charges"][:, 1]
             spin = alpha_charge - beta_charge
