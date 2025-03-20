@@ -30,6 +30,7 @@ from .utils.graph_utils import (
     potential_full_from_edge_inds,
     heisenberg_potential_full_from_edge_inds,
 )
+import torch.profiler
 
 
 @registry.register_model("EScAIP_backbone")
@@ -58,6 +59,7 @@ class EScAIPBackbone(nn.Module, GraphModelMixin):
         self.use_pbc_single = (
             self.molecular_graph_cfg.use_pbc_single
         )  # TODO: remove this when FairChem fixes the bug
+
         generate_graph_fn = partial(
             self.generate_graph,
             cutoff=self.molecular_graph_cfg.max_radius,
@@ -532,6 +534,16 @@ class EScAIPDirectForceEnergyLRHead(EScAIPHeadBase):
         # get total charge and regularize with that
         self.post_init(gain=0.01)
 
+    def post_init(self, gain=1.0):
+        # init weights
+        self.apply(partial(init_linear_weights, gain=gain))
+        # ['cudagraphs', 'inductor', 'onnxrt', 'openxla', 'tvm']
+        self.forward_fn = (
+            torch.compile(self.compiled_forward, backend="inductor", dynamic=True)
+            if self.global_cfg.use_compile
+            else self.compiled_forward
+        )
+
     def get_charges(self, node_features, data: GraphAttentionData, unpad: bool = False):
         q_pred = self.q_output_lr(node_features)
         # print("charge shape", q_pred.shape)
@@ -612,7 +624,7 @@ class EScAIPDirectForceEnergyLRHead(EScAIPHeadBase):
         # charge term
         energy_output_lr = potential_full_from_edge_inds(
             edge_index=data.edge_index_lr,
-            pos=data.pos,
+            pos=data.pos,  # test
             q=charges_padded,
             sigma=1.0,
             epsilon=1e-6,
@@ -626,6 +638,7 @@ class EScAIPDirectForceEnergyLRHead(EScAIPHeadBase):
             dim=0,
             reduce=self.energy_reduce,
         )
+        # print("scattered_energy_lr", scattered_energy_lr.shape)
 
         if return_charges:
             # print("charges padded: ", charges_padded.shape)
@@ -658,7 +671,6 @@ class EScAIPDirectForceEnergyLRHead(EScAIPHeadBase):
             node_features=node_features,
             data=data,
         )
-
         energy_lr_dict = self.get_lr_energies(
             node_features=node_features, data=data, return_charges=self.ret_charges
         )
@@ -703,12 +715,6 @@ class EScAIPDirectForceEnergyLRHead(EScAIPHeadBase):
 
         if self.gnn_cfg.heisenberg_tf:
             unpad_dict["energy_spin"] = res_dict_raw["energy_spin"]
-
-        # print("spin charges", res_dict_raw["spin_charges"].shape)
-        # print("charges", res_dict_raw["charges"].shape)
-        # print("forces", res_dict_raw["forces_sr"].shape)
-        # print("energy", res_dict_raw["energy_lr"].shape)
-        # print("energy", res_dict_raw["energy_sr"].shape)
 
         res_unpad = unpad_results(
             results=unpad_dict,
@@ -833,7 +839,6 @@ class EScAIPGradientForceEnergyLRHead(EScAIPHeadBase):
 
     def get_lr_energies(
         self,
-        edge_features,
         node_features,
         data: GraphAttentionData,
         return_charges: bool = False,
@@ -867,8 +872,11 @@ class EScAIPGradientForceEnergyLRHead(EScAIPHeadBase):
             charges_padded = charges_padded
 
         energy_output_lr = potential_full_from_edge_inds(
+            # edge_dist=data.dist_lr_interactions, # test
             edge_index=data.edge_index_lr,
-            pos=data.pos,
+            # pos=data.pos, # test
+            # convergence_func=data.convergence_func, # test
+            # edge_dist_transformed=data.edge_dist_transformed, # test
             q=charges_padded,
             sigma=1.0,
             epsilon=1e-6,
@@ -912,7 +920,6 @@ class EScAIPGradientForceEnergyLRHead(EScAIPHeadBase):
         )
 
         energy_lr_dict = self.get_lr_energies(
-            edge_features=edge_features,
             node_features=node_features,
             data=data,
             return_charges=self.ret_charges,
@@ -969,14 +976,7 @@ class EScAIPGradientForceEnergyLRHead(EScAIPHeadBase):
             node_features=emb["node_features"],
             data=emb["data"],
         )
-        """
-        energy_lr_dict = self.get_lr_energies(
-            edge_features=emb["edge_features"],
-            node_features=emb["node_features"],
-            data=emb["data"],
-            return_charges=True,
-        )
-        """
+
         # print("charges", energy_lr_dict["charges"].shape)
 
         # only sr need to be unpadded

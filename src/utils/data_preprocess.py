@@ -55,6 +55,7 @@ def data_preprocess(
 
     # generate graph
     graph = generate_graph_fn(data)
+    # print("distances metrics max:", graph.edge_distance_vec.max(), "min: ", graph.edge_distance_vec.min(), "mean: ", graph.edge_distance_vec.mean(), "std: ", graph.edge_distance_vec.std())
 
     # sort edge index according to receiver node
     edge_index, edge_attr = torch_geometric.utils.sort_edge_index(
@@ -77,6 +78,7 @@ def data_preprocess(
         lmax=gnn_cfg.node_direction_expansion_size - 1,
         num_nodes=data.num_nodes,
     )
+    # print("max neighbors: ", molecular_graph_cfg.max_neighbors)
 
     # convert to neighbor list
     neighbor_list, neighbor_mask, index_mapping = convert_neighbor_list(
@@ -199,16 +201,16 @@ def data_preprocess_spin_charge(
     graph_lr = generate_graph_fn_lr(data)
     edge_index_lr = graph_lr.edge_index
 
-    # if molecular_graph_cfg.max_radius == molecular_graph_cfg.max_radius_lr:
-    #    #TODO: reuse radius graph potentially? this is performance tho
-    #    pass
-
+    # print("edge distances metrics --> max:", graph.edge_distance_vec.max(), "min: ", graph.edge_distance_vec.min(), "mean: ", graph.edge_distance_vec.mean())
     # sort edge index according to receiver node
     edge_index, edge_attr = torch_geometric.utils.sort_edge_index(
         graph.edge_index,
         [graph.edge_distance, graph.edge_distance_vec],
         sort_by_row=False,
     )
+
+    # print("distances metrics max:", graph.edge_distance_vec.max(), "min: ", graph.edge_distance_vec.min(), "mean: ", graph.edge_distance_vec.mean(), "std: ", graph.edge_distance_vec.std())
+
     edge_distance, edge_distance_vec = edge_attr[0], edge_attr[1]
 
     # edge directions (for direct force prediction, ref: gemnet)
@@ -226,6 +228,7 @@ def data_preprocess_spin_charge(
     )
 
     # convert to neighbor list
+    # print("max neighbors: ", molecular_graph_cfg.max_neighbors)
     neighbor_list, neighbor_mask, index_mapping = convert_neighbor_list(
         edge_index, molecular_graph_cfg.max_neighbors, data.num_nodes
     )
@@ -249,6 +252,7 @@ def data_preprocess_spin_charge(
         # create spin tensor
         spin = data.spin
         # print type of data
+        # print("spin:", spin)
         # print("spin type", type(spin))
         # print("spin length", len(spin))
         # print(
@@ -268,7 +272,9 @@ def data_preprocess_spin_charge(
 
     if molecular_graph_cfg.allowed_charges:
         # create charge tensor
+
         charge = data.charge
+        # print("charge: ", charge)
         charge_expand = one_hot_encode(
             charge,
             n_nodes_graphs,
@@ -345,6 +351,7 @@ def data_preprocess_spin_charge(
         angle_embedding=angle_embedding,
         neighbor_list=neighbor_list,
         neighbor_mask=neighbor_mask,
+        pos=pos,  # test
         node_batch=node_batch,
         node_padding_mask=node_padding_mask,
         graph_padding_mask=graph_padding_mask,
@@ -352,7 +359,6 @@ def data_preprocess_spin_charge(
         charge=data.charge,
         partial_charge=None,  # TODO: use this if we ever get here
         partial_spin=None,  # TODO: use this if we ever get here
-        pos=pos,
         edge_index_lr=edge_index_lr,
     )
     return x
