@@ -612,7 +612,7 @@ class EScAIPDirectForceEnergyLRHead(EScAIPHeadBase):
                     dim_size=data.graph_padding_mask.shape[0],
                     dim=0,
                     reduce="sum",
-                ).sum(dim=1)
+                )
                 # sum energies from alpha and beta
                 ret_dict["spin_charges"] = spin_charges_scattered
 
