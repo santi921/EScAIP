@@ -349,6 +349,13 @@ def data_preprocess_spin_charge(
         raise NotImplementedError(
             f"Attention name {gnn_cfg.atten_name} not implemented"
         )
+    # print(data)
+    dipole = None
+    if global_cfg.use_dipole:
+        dipole = data[global_cfg.dipole_key]
+        dipole = dipole.view(data.num_graphs, 3)
+        # print("dipole shape: ", dipole.shape)
+        # print(dipole)
 
     x = GeneralGraphAttentionData(
         atomic_numbers=atomic_numbers,
@@ -368,5 +375,6 @@ def data_preprocess_spin_charge(
         partial_charge=None,  # TODO: use this if we ever get here
         partial_spin=None,  # TODO: use this if we ever get here
         edge_index_lr=edge_index_lr,
+        dipole=None,
     )
     return x

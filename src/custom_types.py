@@ -1,5 +1,6 @@
 import dataclasses
 import torch
+from typing import Optional
 
 
 @dataclasses.dataclass
@@ -54,6 +55,7 @@ class GeneralGraphAttentionData:
     pos: (N, 3)
     #batch_ind: (N)
     edge_index_lr: (E, 2) Edge index for long range interactions
+    dipole: (Optional[torch.Tensor]) (num_graphs, 3) Dipole moment for each graph, none if not used
     """
 
     atomic_numbers: torch.Tensor
@@ -69,11 +71,12 @@ class GeneralGraphAttentionData:
     graph_padding_mask: torch.Tensor
     spin: torch.Tensor
     charge: torch.Tensor
-    partial_charge: torch.Tensor
-    partial_spin: torch.Tensor
     pos: torch.Tensor
     # batch_ind: torch.Tensor
     edge_index_lr: torch.Tensor
+    partial_charge: torch.Tensor = None
+    partial_spin: torch.Tensor = None
+    dipole: Optional[torch.Tensor] = None
 
 
 def flatten_graph_attention_data_with_spec(data, spec):

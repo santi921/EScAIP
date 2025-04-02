@@ -372,6 +372,66 @@ class EScAIPHeadBase(nn.Module, HeadInterface):
         return no_weight_decay(self)
 
 
+@registry.register_model("EScAIP_direct_dipole_head")
+class EScAIPDirectDipoleHead(EScAIPHeadBase):
+    def __init__(self, backbone: EScAIPBackbone):
+        super().__init__(backbone)
+
+        self.dipole_direction_layer = OutputLayer(
+            global_cfg=self.global_cfg,
+            gnn_cfg=self.gnn_cfg,
+            reg_cfg=self.reg_cfg,
+            output_type="Vector",
+        )
+        self.dipole_magnitude_layer = OutputLayer(
+            global_cfg=self.global_cfg,
+            gnn_cfg=self.gnn_cfg,
+            reg_cfg=self.reg_cfg,
+            output_type="Scalar",
+        )
+        print("dipole magnitude layer", self.dipole_magnitude_layer)
+        print("dipole direction layer", self.dipole_direction_layer)
+        self.post_init()
+
+    def compiled_forward(self, edge_features, node_features, data: GraphAttentionData):
+        # get dipole direction from edge features
+        dipole_direction = self.dipole_direction_layer(
+            edge_features
+        )  # (num_nodes, max_neighbor, 3)
+        dipole_direction = (
+            dipole_direction * data.edge_direction
+        )  # (num_nodes, max_neighbor, 3)
+        dipole_direction = (dipole_direction * data.neighbor_mask.unsqueeze(-1)).sum(
+            dim=1
+        )  # (num_nodes, 3)
+        # get dipole magnitude from node readouts
+        dipole_magnitude = self.dipole_magnitude_layer(node_features)  # (num_nodes, 1)
+        # get output dipole
+        return dipole_direction * dipole_magnitude  # (num_nodes, 3)
+
+    @conditional_grad(torch.enable_grad())
+    def forward(self, data, emb: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
+        dipole_output = self.forward_fn(
+            edge_features=emb["edge_features"],
+            node_features=emb["node_features"],
+            data=emb["data"],
+        )
+
+        dipole_output = compilable_scatter(
+            src=dipole_output,
+            index=emb["data"].node_batch,
+            dim_size=emb["data"].graph_padding_mask.shape[0],
+            dim=0,
+            reduce="mean",
+        )
+
+        return unpad_results(
+            results={"dipole": dipole_output},
+            node_padding_mask=emb["data"].node_padding_mask,
+            graph_padding_mask=emb["data"].graph_padding_mask,
+        )
+
+
 @registry.register_model("EScAIP_direct_force_head")
 class EScAIPDirectForceHead(EScAIPHeadBase):
     def __init__(self, backbone: EScAIPBackbone):
@@ -738,7 +798,6 @@ class EScAIPDirectForceEnergyLRHead(EScAIPHeadBase):
             "energy": energy_output,
             "forces": forces_output,
         }
-
         if self.constrain_charge:
             # if two component, sum the charges for each atom
             if self.gnn_cfg.two_component_latent_charge:
@@ -754,8 +813,6 @@ class EScAIPDirectForceEnergyLRHead(EScAIPHeadBase):
             spin = alpha_charge - beta_charge
             ret_dict["spin"] = spin
 
-        # print(ret_dict)
-        # print(ret_dict.keys())
         return ret_dict
 
 
@@ -1021,7 +1078,7 @@ class EScAIPGradientForceEnergyLRHead(EScAIPHeadBase):
             beta_charge = res_unpad["spin_charges"][:, 1]
             spin = alpha_charge - beta_charge
             ret_dict["spin"] = spin
-
+        # print(emb["data"])
         return ret_dict
 
 

@@ -1,5 +1,5 @@
 from dataclasses import dataclass, fields, is_dataclass, field
-from typing import Any, Dict, Literal, Type
+from typing import Any, Dict, Literal, Type, Optional
 
 
 @dataclass
@@ -14,6 +14,8 @@ class GlobalConfigs:
     use_compile: bool = True
     use_padding: bool = True
     j_coupling_hidden_dim: int = 128
+    use_dipole: bool = False
+    dipole_key: Optional[str] = "dipole_moment"
 
 
 @dataclass
@@ -82,6 +84,7 @@ def init_configs(cls: Type[EScAIPConfigs], kwargs: Dict[str, Any]) -> EScAIPConf
     """
     init_kwargs = {}
     for field_temp in fields(cls):
+        # print(field_temp.name, field_temp.type)
         if is_dataclass(field_temp.type):
             init_kwargs[field_temp.name] = init_configs(field_temp.type, kwargs)
         elif field_temp.name in kwargs:
