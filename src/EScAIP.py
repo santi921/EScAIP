@@ -389,8 +389,8 @@ class EScAIPDirectDipoleHead(EScAIPHeadBase):
             reg_cfg=self.reg_cfg,
             output_type="Scalar",
         )
-        print("dipole magnitude layer", self.dipole_magnitude_layer)
-        print("dipole direction layer", self.dipole_direction_layer)
+        # print("dipole magnitude layer", self.dipole_magnitude_layer)
+        # print("dipole direction layer", self.dipole_direction_layer)
         self.post_init()
 
     def compiled_forward(self, edge_features, node_features, data: GraphAttentionData):

@@ -59,7 +59,6 @@ def data_preprocess(
         cell = cell.unsqueeze(0).expand(data.natoms.shape[0], -1, -1)
         data.cell = cell
         data.fixed = torch.zeros_like(data.atomic_numbers).bool()
-    graph = generate_graph_fn(data)
 
     # generate graph
     graph = generate_graph_fn(data)
@@ -205,6 +204,14 @@ def data_preprocess_spin_charge(
     ).to(data.pos.device)
 
     # generate graph
+    #### A patch for FAIR SPICE data, remove later
+    if molecular_graph_cfg.use_pbc and "cell" not in data:
+        cell = torch.eye(3, device=data.pos.device, dtype=data.pos.dtype)
+        cell = cell * 200.0
+        cell = cell.unsqueeze(0).expand(data.natoms.shape[0], -1, -1)
+        data.cell = cell
+        data.fixed = torch.zeros_like(data.atomic_numbers).bool()
+
     graph = generate_graph_fn(data)
     graph_lr = generate_graph_fn_lr(data)
     edge_index_lr = graph_lr.edge_index
