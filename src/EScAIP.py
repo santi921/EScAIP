@@ -653,7 +653,7 @@ class EScAIPDirectForceEnergyLRHead(EScAIPHeadBase):
                 edge_index=data.edge_index_lr,
                 q=charges_padded,
                 nn=self.j_coupling_nn,
-                padding_dim=data.node_padding_mask.shape[0],
+                # padding_dim=data.node_padding_mask.shape[0],
             )
 
             spin_energy_scattered = compilable_scatter(
@@ -690,7 +690,7 @@ class EScAIPDirectForceEnergyLRHead(EScAIPHeadBase):
             q=charges_padded,
             sigma=1.0,
             epsilon=1e-6,
-            padding_dim=data.node_padding_mask.shape[0],
+            # padding_dim=data.node_padding_mask.shape[0],
         )
 
         scattered_energy_lr = compilable_scatter(
@@ -934,7 +934,7 @@ class EScAIPGradientForceEnergyLRHead(EScAIPHeadBase):
             q=charges_padded,
             sigma=1.0,
             epsilon=1e-6,
-            padding_dim=data.node_padding_mask.shape[0],
+            # padding_dim=data.node_padding_mask.shape[0],
         )
 
         scattered_energy_lr = compilable_scatter(

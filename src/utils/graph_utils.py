@@ -431,7 +431,6 @@ def potential_full_from_edge_inds(
     sigma: float = 1.0,
     epsilon: float = 1e-6,
     twopi: float = 2.0 * np.pi,
-    padding_dim: torch.Tensor = None,
 ):
     """
     Get the potential energy for each atom in the batch.
@@ -457,6 +456,7 @@ def potential_full_from_edge_inds(
 
     edge_dist_transformed = (1.0 / (edge_dist + epsilon)) / twopi / 2.0
     convergence_func = torch.special.erf(edge_dist / sigma / (2.0**0.5))
+    # print(convergence_func)
     # q = q.view(-1)
 
     q_source = q[i].view(-1)
@@ -473,7 +473,6 @@ def heisenberg_potential_full_from_edge_inds(
     edge_index: torch.Tensor,  # keep
     q: torch.Tensor,
     nn: torch.nn.Module,
-    padding_dim: torch.Tensor = None,
     sigma: float = 1.0,
 ):
     """
@@ -494,48 +493,15 @@ def heisenberg_potential_full_from_edge_inds(
     edge_dist = distance_vec.norm(dim=-1).reshape(-1, 1)
     edge_dist.requires_grad_(True)
 
-    # list_target = edge_index[1]
-    # list_source = edge_index[0]
     convergence_func = torch.special.erf(edge_dist / sigma / (2.0**0.5)).reshape(-1, 1)
     coupling = nn(edge_dist)
 
     q_source = q[i]
     q_target = q[j]
     pairwise_potential = q_source * q_target * coupling * convergence_func
-    # print("pairwise potential: ", pairwise_potential.shape)
-    # Aggregate results for each node
+
     results = scatter(
         pairwise_potential, i, dim=0, dim_size=q.size(0), reduce="sum"
     ).sum(dim=1)
 
-    # Handle padding if specified
-    # if padding_dim is not None:
-    #    padded_results = torch.zeros(padding_dim, device=q.device)
-    #    padded_results[: results.size(0)] = results
-    #    return padded_results
-
-    """ - method 1
-    # get list of neighbors for each node
-    dict_mask_lr = {}
-    dict_ind_neighbors_interactions = {}
-
-    for i in list_source.unique():
-        dict_mask_lr[i] = list_target[list_source == i]
-        dict_ind_neighbors_interactions[i] = torch.where(list_source == i)[0]
-
-
-    # create vector of potentials from ind 0 to n_atoms
-    if padding_dim is not None:
-        results = torch.zeros(padding_dim, device=q.device)
-    else:
-        results = torch.zeros(list_source.max() + 1, device=q.device)
-
-    for ind, mask in dict_mask_lr.items():
-        q_1 = q[ind]
-        q_neighbors = q[mask]
-        distance_now = edge_dist[dict_ind_neighbors_interactions[ind]]
-        convergence_func_now = convergence_func[dict_ind_neighbors_interactions[ind]]
-        coupling = nn(distance_now)
-        results[ind] = torch.sum(q_1 * q_neighbors * coupling * convergence_func_now)
-    """
     return results

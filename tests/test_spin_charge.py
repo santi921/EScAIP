@@ -7,6 +7,7 @@ from tests.test_utils import (
 )
 from src.utils.graph_utils import (
     get_potential,
+    potential_full_from_edge_inds,
     heisenberg_potential_full_from_edge_inds,
 )
 
@@ -45,34 +46,56 @@ class TestSpinCharge:
             == torch.tensor(1.0)
         ), f"Expected 1.0, got {get_potential(q, edge_distance, edge_index, mask_2, ind_interactions_2)}"
 
-    def test_spin(self):
+    def test_charge(self):
         q = torch.tensor([1.0, -1.0, 1.0], device=self.batch.pos.device)
         edge_index = torch.tensor([[0, 1], [1, 0]], device=self.batch.pos.device)
-        pos = self.batch.pos
+        pos = torch.tensor(
+            [[0.0, 0.0, 0.0], [0.0, 0.0, 1.0], [0.0, 0.0, -1.0]],
+            device=self.batch.pos.device,
+        )
+
+        energy_spin_raw = potential_full_from_edge_inds(
+            pos=pos,
+            edge_index=edge_index,
+            q=q,
+        )
+
+        # assert all are zero expect for the first
+        benchmark = torch.tensor([-0.05432664975523949], device=self.batch.pos.device)
+        assert torch.allclose(
+            input=energy_spin_raw[0], other=benchmark, atol=1e-1
+        ), f"Expected -0.05432664975523949, got {energy_spin_raw[0]} "
+
+    def test_spin(self):
+        q = torch.tensor(
+            [[1.0, 1.0, 1.0], [1.0, -1.0, 1.0]], device=self.batch.pos.device
+        )
+        edge_index = torch.tensor([[0, 1], [1, 0]], device=self.batch.pos.device)
+        pos = torch.tensor(
+            [[0.0, 0.0, 0.0], [0.0, 0.0, 1.0], [0.0, 0.0, -1.0]],
+            device=self.batch.pos.device,
+        )
 
         layers = [torch.nn.Linear(in_features=1, out_features=20)]
         layers += [torch.nn.Linear(in_features=20, out_features=1)]
-        nn_charge = torch.nn.Sequential(*layers)
+        nn_coupling = torch.nn.Sequential(*layers)
         # set nn_charge to all ones
-        nn_charge[0].weight.data.fill_(1)
-        nn_charge[0].bias.data.fill_(0)
-        nn_charge[1].weight.data.fill_(1)
-        nn_charge[1].bias.data.fill_(0)
+        nn_coupling[0].weight.data.fill_(1)
+        nn_coupling[0].bias.data.fill_(0)
+        nn_coupling[1].weight.data.fill_(1)
+        nn_coupling[1].bias.data.fill_(0)
 
-        nn_charge.to(self.batch.pos.device)
+        nn_coupling.to(self.batch.pos.device)
 
         energy_spin_raw = heisenberg_potential_full_from_edge_inds(
             pos=pos,
             edge_index=edge_index,
             q=q,
-            nn=nn_charge,
+            nn=nn_coupling,
         )
 
-        # print(energy_spin_raw)
-
         # assert all are zero expect for the first
-        benchmark = torch.tensor([-46.8360], device=self.batch.pos.device)
-        print(benchmark - energy_spin_raw[0])
+        benchmark = torch.tensor([13.653789520263672], device=self.batch.pos.device)
         assert torch.allclose(
             input=energy_spin_raw[0], other=benchmark, atol=1e-1
-        ), f"Expected -46.836082458496094, got {energy_spin_raw[0]} "
+        ), f"Expected 13.653789520263672, got {energy_spin_raw[0]} "
