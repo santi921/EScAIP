@@ -3,6 +3,7 @@ from functools import partial
 import torch
 import torch.nn as nn
 import torch_geometric
+import torch.nn.functional as F
 
 from e3nn import o3
 
@@ -647,10 +648,20 @@ class EScAIPDirectForceEnergyLRHead(EScAIPHeadBase):
 
         charges_padded = self.get_charges(node_features, data)
 
+        num_edges = torch.tensor(
+            data.edge_index_lr.size(1), device=data.edge_index_lr.device
+        )
+        torch.distributed.all_reduce(num_edges, op=torch.distributed.ReduceOp.MAX)
+        max_edges = num_edges.item()
+        padded_edge_index = F.pad(
+            data.edge_index_lr, (0, max_edges - data.edge_index_lr.size(1)), value=-1
+        )
+
         if self.gnn_cfg.heisenberg_tf:
             energy_spin_raw = heisenberg_potential_full_from_edge_inds(
                 pos=data.pos,
-                edge_index=data.edge_index_lr,
+                # edge_index=data.edge_index_lr,
+                edge_index=padded_edge_index,
                 q=charges_padded,
                 nn=self.j_coupling_nn,
                 # padding_dim=data.node_padding_mask.shape[0],
@@ -685,7 +696,8 @@ class EScAIPDirectForceEnergyLRHead(EScAIPHeadBase):
 
         # charge term
         energy_output_lr = potential_full_from_edge_inds(
-            edge_index=data.edge_index_lr,
+            # edge_index=data.edge_index_lr,
+            edge_index=padded_edge_index,
             pos=data.pos,  # test
             q=charges_padded,
             sigma=1.0,
@@ -898,13 +910,23 @@ class EScAIPGradientForceEnergyLRHead(EScAIPHeadBase):
         return_charges: bool = False,
     ):
         ret_dict = {}
-
         charges_padded = self.get_charges(node_features, data)
+
+        num_edges = torch.tensor(
+            data.edge_index_lr.size(1), device=data.edge_index_lr.device
+        )
+        torch.distributed.all_reduce(num_edges, op=torch.distributed.ReduceOp.MAX)
+        max_edges = num_edges.item()
+
+        padded_edge_index = F.pad(
+            data.edge_index_lr, (0, max_edges - data.edge_index_lr.size(1)), value=-1
+        )
 
         if self.gnn_cfg.heisenberg_tf:
             energy_spin_raw = heisenberg_potential_full_from_edge_inds(
                 pos=data.pos,
-                edge_index=data.edge_index_lr,
+                # edge_index=data.edge_index_lr,
+                edge_index=padded_edge_index,
                 q=charges_padded,
                 nn=self.coupling_nn,
             )
@@ -927,8 +949,9 @@ class EScAIPGradientForceEnergyLRHead(EScAIPHeadBase):
 
         energy_output_lr = potential_full_from_edge_inds(
             # edge_dist=data.dist_lr_interactions, # test
-            edge_index=data.edge_index_lr,
-            # pos=data.pos, # test
+            # edge_index=data.edge_index_lr,
+            edge_index=padded_edge_index,
+            pos=data.pos,  # test
             # convergence_func=data.convergence_func, # test
             # edge_dist_transformed=data.edge_dist_transformed, # test
             q=charges_padded,

@@ -55,7 +55,7 @@ class GraphNeuralNetworksConfigs:
     output_hidden_layer_multiplier: int
     ffn_hidden_layer_multiplier: int
     use_angle_embedding: bool = True
-    energy_reduce: Literal["sum", "mean"] = "mean"
+    energy_reduce: Literal["sum", "mean"] = "sum"
     constrain_charge: bool = False
     constrain_spin: bool = False
     two_component_latent_charge: bool = False
